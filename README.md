@@ -22,6 +22,9 @@ The Image Tool provides three functions within the main script:
   - [Update Image](site/update-image.md) - The `update` command creates a new Docker image by applying WebLogic patches
   to an existing image.  Additionally, you can create a WebLogic domain if one did not exist previously, update an
   an existing domain, or deploy an application.
+  - [Create MII Image](site/create-mii-image.md) - The `create_mii_image` command creates a Docker image to hold only the 
+    WDT resources (WDT binaries, and WDT resources), the image is suitable for deploying in the WebLogic Kubernetes Operator 
+    Model In Image domain.
   - [Cache](site/cache.md) - The Image Tool maintains metadata on the local file system for patches and installers.  
   The `cache` command can be used to manipulate the local metadata.
 
