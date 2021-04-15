@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 
@@ -50,6 +51,7 @@ public class CreateMIIOperatorImage extends CommonOptions implements Callable<Co
             init(buildId);
 
             tmpDir = getTempDirectory();
+            copyOptionsFromImage(fromImage, tmpDir);
 
             DockerBuildCommand cmdBuilder = getInitialBuildCmd(tmpDir);
             // build wdt args if user passes --wdtModelPath
@@ -124,6 +126,38 @@ public class CreateMIIOperatorImage extends CommonOptions implements Callable<Co
         logger.exiting();
     }
 
+    /**
+     * Set the docker options (dockerfile template bean) by extracting information from the fromImage.
+     * @param fromImage image tag of the starting image
+     * @param tmpDir    name of the temp directory to use for the build context
+     * @throws IOException when a file operation fails.
+     * @throws InterruptedException if an interrupt is received while trying to run a system command.
+     */
+    public void copyOptionsFromImage(String fromImage, String tmpDir) throws IOException, InterruptedException {
+
+        if (fromImage != null && !fromImage.isEmpty()) {
+            logger.finer("IMG-0002", fromImage);
+            dockerfileOptions.setBaseImage(fromImage);
+
+            Properties baseImageProperties = Utils.getBaseImageProperties(fromImage, tmpDir);
+            String pkgMgrProp = baseImageProperties.getProperty("PACKAGE_MANAGER", "YUM");
+
+            PackageManagerType pkgMgr = PackageManagerType.valueOf(pkgMgrProp);
+            logger.fine("fromImage package manager {0}", pkgMgr);
+            if (packageManager != PackageManagerType.OS_DEFAULT && pkgMgr != packageManager) {
+                logger.info("IMG-0079", pkgMgr, packageManager);
+                pkgMgr = packageManager;
+            }
+            dockerfileOptions.setPackageInstaller(pkgMgr);
+        } else if (packageManager == PackageManagerType.OS_DEFAULT) {
+            // Default OS is Oracle Linux 7-slim, so default package manager is YUM
+            dockerfileOptions.setPackageInstaller(PackageManagerType.YUM);
+        } else {
+            dockerfileOptions.setPackageInstaller(packageManager);
+        }
+    }
+
+
     private List<String> addWdtFilesAsList(Path fileArg, String type, String tmpDir) throws IOException {
         String[] listOfFiles = fileArg.toString().split(",");
         List<String> fileList = new ArrayList<>();
@@ -146,6 +180,12 @@ public class CreateMIIOperatorImage extends CommonOptions implements Callable<Co
     String getInstallerVersion() {
         return null;
     }
+
+    @CommandLine.Option(
+        names = {"--fromImage"},
+        description = "Docker image to use as base image."
+    )
+    private String fromImage;
 
     @CommandLine.Option(
         names = {"--wdtModel"},
