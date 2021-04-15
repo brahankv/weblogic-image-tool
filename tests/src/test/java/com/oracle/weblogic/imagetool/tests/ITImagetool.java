@@ -23,6 +23,7 @@ import com.oracle.weblogic.imagetool.tests.annotations.Logger;
 import com.oracle.weblogic.imagetool.tests.utils.CacheCommand;
 import com.oracle.weblogic.imagetool.tests.utils.CommandResult;
 import com.oracle.weblogic.imagetool.tests.utils.CreateCommand;
+import com.oracle.weblogic.imagetool.tests.utils.CreateMIIImageCommand;
 import com.oracle.weblogic.imagetool.tests.utils.RebaseCommand;
 import com.oracle.weblogic.imagetool.tests.utils.Runner;
 import com.oracle.weblogic.imagetool.tests.utils.UpdateCommand;
@@ -642,6 +643,40 @@ class ITImagetool {
             assertFalse(imageId.isEmpty(), "Image was not created: " + tagName);
         }
     }
+
+
+    /**
+     * create a MII Image.
+     *
+     * @throws Exception - if any error occurs
+     */
+    @Test
+    @Order(14)
+    @Tag("gate")
+    @DisplayName("Create MII Image")
+    void createMIIImg(TestInfo testInfo) throws Exception {
+        String tagName = build_tag + ":" + getMethodName(testInfo);
+        String command = new CreateMIIImageCommand()
+            .tag(tagName)
+            .version(WLS_VERSION)
+            .wdtVersion(WDT_VERSION)
+            .wdtModel(WDT_MODEL)
+            .wdtArchive(WDT_ARCHIVE)
+            .wdtVariables(WDT_VARIABLES)
+            .wdtModelHome("/u01/models")
+            .build();
+
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(command, out, logger);
+            assertEquals(0, result.exitValue(), "for command: " + command);
+
+            // verify the docker image is created
+            String imageId = Runner.run("docker images -q " + tagName, out, logger).stdout().trim();
+            assertFalse(imageId.isEmpty(), "Image was not created: " + tagName);
+            wlsImgBuilt = true;
+        }
+    }
+
 
     /**
      * Create a FMW image with internet access to download PSU.
