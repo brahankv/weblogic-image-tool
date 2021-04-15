@@ -219,7 +219,7 @@ public class CreateMIIOperatorImage extends CommonOptions implements Callable<Co
         names = {"--miiResourceRoot"},
         description = "The root directory where the WDT binaries and models will be create. WDT binaries will be in "
             + " subdirectory weblogic-deploy and WDT models will be under models",
-        defaultValue = "/common"
+        defaultValue = "common"
     )
     private String miiResourceRoot;
 
