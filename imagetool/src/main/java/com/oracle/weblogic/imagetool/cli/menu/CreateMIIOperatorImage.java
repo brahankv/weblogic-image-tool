@@ -100,7 +100,10 @@ public class CreateMIIOperatorImage extends CommonOptions implements Callable<Co
         logger.entering(tmpDir);
 
         dockerfileOptions.setWdtEnabled()
-            .setWdtModelHome(wdtModelHome);
+            .setMiiResourceRoot(miiResourceRoot)
+            .setWdtHome(miiResourceRoot)
+            .setWdtModelHome(miiResourceRoot + File.separator + "models");
+
 
         if (wdtModelPath != null) {
             List<String> modelList = addWdtFilesAsList(wdtModelPath, "model", tmpDir);
@@ -213,10 +216,11 @@ public class CreateMIIOperatorImage extends CommonOptions implements Callable<Co
     private String wdtVersion;
 
     @CommandLine.Option(
-        names = {"--wdtModelHome"},
-        description = "Copy the models to the location in the image Default: ${DEFAULT-VALUE}.",
-        defaultValue = "/u01/wdt/models"
+        names = {"--miiResourceRoot"},
+        description = "The root directory where the WDT binaries and models will be create. WDT binaries will be in "
+            + " subdirectory weblogic-deploy and WDT models will be under models",
+        defaultValue = "/common"
     )
-    private String wdtModelHome;
+    private String miiResourceRoot;
 
 }

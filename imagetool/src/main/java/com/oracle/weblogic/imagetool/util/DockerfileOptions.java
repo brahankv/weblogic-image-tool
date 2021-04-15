@@ -71,6 +71,8 @@ public class DockerfileOptions {
     private String wdtInstallerFilename;
     private boolean wdtUseEncryption;
 
+    private String miiResourceRoot;
+
     // Additional Build Commands
     private Map<String,List<String>> additionalBuildCommands;
 
@@ -317,6 +319,21 @@ public class DockerfileOptions {
     public String wdt_model_home() {
         return wdtModelHome;
     }
+
+    public DockerfileOptions setWdtHome(String value) {
+        this.wdtHome = value;
+        return this;
+    }
+
+    public String mii_resource_root() {
+        return miiResourceRoot;
+    }
+
+    public DockerfileOptions setMiiResourceRoot(String miiResourceRoot) {
+        this.miiResourceRoot = miiResourceRoot;
+        return this;
+    }
+
 
     /**
      * Check to see if WDT model home is not under WDT home.

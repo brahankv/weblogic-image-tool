@@ -50,7 +50,7 @@ public class CreateMIIImageCommand extends ImageToolCommand {
         tag = value;
         return this;
     }
-    
+
     public CreateMIIImageCommand additionalBuildCommands(Path value) {
         additionalBuildCommands = value.toString();
         return this;
@@ -96,7 +96,6 @@ public class CreateMIIImageCommand extends ImageToolCommand {
             + field("--wdtVersion", wdtVersion)
             + field("--wdtModel", wdtModel)
             + field("--wdtArchive", wdtArchive)
-            + field("--wdtVariables", wdtVariables)
-            + field("--wdtModelHome", wdtModelHome);
+            + field("--wdtVariables", wdtVariables);
     }
 }

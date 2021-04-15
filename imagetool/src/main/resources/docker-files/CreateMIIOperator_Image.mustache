@@ -41,17 +41,16 @@ USER root
 ## Create user and group
 RUN if [ -z "$(getent group {{groupid}})" ]; then hash groupadd &> /dev/null && groupadd {{groupid}} || exit -1 ; fi \
  && if [ -z "$(getent passwd {{userid}})" ]; then hash useradd &> /dev/null && useradd -g {{groupid}} {{userid}} || exit -1; fi \
- && mkdir -p /u01 \
- && chown {{userid}}:{{groupid}} /u01 \
- && chmod 775 /u01
+ && mkdir -p /{{mii_resource_root}} \
+ && chown {{userid}}:{{groupid}} {{mii_resource_root}} \
+ && chmod 775 /{{mii_resource_root}}
 
 USER {{userid}}
 
 FROM os_update as wdt_build
 LABEL com.oracle.weblogic.imagetool.buildid="{{buildId}}"
 
-ENV WLSDEPLOY_PROPERTIES="{{{wlsdeploy_properties}}} -Djava.security.egd=file:/dev/./urandom" \
-    DOMAIN_HOME={{{domain_home}}}
+ENV WLSDEPLOY_PROPERTIES="{{{wlsdeploy_properties}}} -Djava.security.egd=file:/dev/./urandom"
 
 COPY --chown={{userid}}:{{groupid}} {{{wdtInstaller}}} {{{tempDir}}}/
 
@@ -61,8 +60,7 @@ RUN mkdir -p {{{wdt_home}}} \
 USER {{userid}}
 
 RUN cd {{{wdt_home}}} \
-&& mkdir -p {{{wdt_model_home}}} \
-&& mkdir -p $(dirname {{{domain_home}}})
+&& mkdir -p {{{wdt_model_home}}}
 
 {{#wdtModels}}
     COPY --chown={{userid}}:{{groupid}} {{{.}}} {{{wdt_model_home}}}/
@@ -102,7 +100,6 @@ COPY --from=wdt_build --chown={{userid}}:{{groupid}} {{wdt_home}} {{wdt_home}}/
 {{/isWdtModelHomeOutsideWdtHome}}
 
 USER {{userid}}
-WORKDIR {{{work_dir}}}
 
 #ENTRYPOINT /bin/bash
 
