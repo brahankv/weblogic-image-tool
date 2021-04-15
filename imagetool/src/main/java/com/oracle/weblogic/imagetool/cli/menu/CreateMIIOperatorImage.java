@@ -100,10 +100,9 @@ public class CreateMIIOperatorImage extends CommonOptions implements Callable<Co
         logger.entering(tmpDir);
 
         dockerfileOptions.setWdtEnabled()
-            .setMiiResourceRoot(miiResourceRoot)
-            .setWdtHome(miiResourceRoot)
-            .setWdtModelHome(miiResourceRoot + File.separator + "models");
-
+            .setMiiResourceRoot("/" + miiResourceRoot)
+            .setWdtHome("/" + miiResourceRoot)
+            .setWdtModelHome("/" + miiResourceRoot + File.separator + "models");
 
         if (wdtModelPath != null) {
             List<String> modelList = addWdtFilesAsList(wdtModelPath, "model", tmpDir);

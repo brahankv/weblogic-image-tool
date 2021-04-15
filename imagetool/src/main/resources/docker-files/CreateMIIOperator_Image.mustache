@@ -59,8 +59,7 @@ RUN mkdir -p {{{wdt_home}}} \
 
 USER {{userid}}
 
-RUN cd {{{wdt_home}}} \
-&& mkdir -p {{{wdt_model_home}}}
+RUN mkdir -p {{{wdt_model_home}}}
 
 {{#wdtModels}}
     COPY --chown={{userid}}:{{groupid}} {{{.}}} {{{wdt_model_home}}}/
