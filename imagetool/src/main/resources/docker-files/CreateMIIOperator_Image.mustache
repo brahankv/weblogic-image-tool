@@ -86,7 +86,7 @@ RUN unzip -q {{{tempDir}}}/{{{wdtInstaller}}} -d {{{wdt_home}}}
 
 FROM os_update as final_build
 
-ENV WDT_HOME={{{wdt_home}}}
+ENV WDT_HOME={{{wdt_home}}}/weblogic-deploy
 ENV WDT_MODEL_HOME={{{wdt_model_home}}}
 
 LABEL com.oracle.weblogic.imagetool.buildid="{{buildId}}"
