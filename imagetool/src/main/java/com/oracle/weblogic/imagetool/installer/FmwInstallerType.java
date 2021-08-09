@@ -67,6 +67,9 @@ public enum FmwInstallerType {
     // Oracle Unified Directory
     OUD_WLS(Utils.toSet(FMW.products, AruProduct.OUD),
         InstallerType.FMW, InstallerType.OUD),
+    // Oracle Internet Directory
+    OID(Utils.toSet(FMW.products, AruProduct.OID),
+        InstallerType.FMW, InstallerType.OID),
     // Oracle WebCenter Content
     WCC(Utils.toSet(FMW.products, AruProduct.WCC),
         InstallerType.FMW, InstallerType.WCC),
@@ -137,9 +140,8 @@ public enum FmwInstallerType {
 
         // create a set from the comma-separated list
         Set<AruProduct> productSet = Stream.of(products.split(","))
-            .filter(e -> !"TOPLINK".equals(e)) // skip TOPLINK product (WLS always contains TOPLINK)
-            .filter(e -> !"BPM".equals(e)) // skip BPM product (SOA always contains BPM)
             .map(e -> "INFRA".equals(e) ? "JRF" : e) // map -> replaces any occurrence of INFRA with JRF
+            .filter(AruProduct::isKnownAruProduct) // drop any products that cannot be patched individually (or unknown)
             .map(AruProduct::valueOf) // convert String to AruProduct enum
             .collect(Collectors.toSet());
 
