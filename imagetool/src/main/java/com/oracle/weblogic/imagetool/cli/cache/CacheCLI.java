@@ -4,13 +4,9 @@
 package com.oracle.weblogic.imagetool.cli.cache;
 
 import java.util.List;
-import java.util.concurrent.Callable;
 
-import com.oracle.weblogic.imagetool.api.model.CommandResponse;
 import com.oracle.weblogic.imagetool.cli.HelpVersionProvider;
-import picocli.CommandLine;
 import picocli.CommandLine.Command;
-import picocli.CommandLine.HelpCommand;
 import picocli.CommandLine.Unmatched;
 
 @Command(
@@ -23,18 +19,11 @@ import picocli.CommandLine.Unmatched;
                 AddInstallerEntry.class,
                 AddPatchEntry.class,
                 AddEntry.class,
-                DeleteEntry.class,
-                HelpCommand.class
+                DeleteEntry.class
         },
         sortOptions = false
 )
-public class CacheCLI implements Callable<CommandResponse> {
-
-    @Override
-    public CommandResponse call() {
-        CommandLine.usage(this, System.out);
-        return new CommandResponse(0, "");
-    }
+public class CacheCLI {
 
     @Unmatched
     List<String> unmatchedOptions;

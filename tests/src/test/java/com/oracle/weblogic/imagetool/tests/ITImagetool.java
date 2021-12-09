@@ -16,12 +16,14 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.oracle.weblogic.imagetool.cli.menu.KubernetesTarget;
 import com.oracle.weblogic.imagetool.logging.LoggingFacade;
 import com.oracle.weblogic.imagetool.logging.LoggingFactory;
 import com.oracle.weblogic.imagetool.tests.annotations.IntegrationTest;
 import com.oracle.weblogic.imagetool.tests.annotations.Logger;
 import com.oracle.weblogic.imagetool.tests.utils.CacheCommand;
 import com.oracle.weblogic.imagetool.tests.utils.CommandResult;
+import com.oracle.weblogic.imagetool.tests.utils.CreateAuxCommand;
 import com.oracle.weblogic.imagetool.tests.utils.CreateCommand;
 import com.oracle.weblogic.imagetool.tests.utils.RebaseCommand;
 import com.oracle.weblogic.imagetool.tests.utils.Runner;
@@ -288,7 +290,7 @@ class ITImagetool {
 
     private void verifyFileInImage(String imagename, String filename, String expectedContent) throws Exception {
         logger.info("verifying the file content in image");
-        String command = "docker run --rm " + imagename + " bash -c 'cat " + filename + "'";
+        String command = "docker run --rm " + imagename + " sh -c 'cat " + filename + "'";
         logger.info("executing command: " + command);
         CommandResult result = Runner.run(command);
         if (!result.stdout().contains(expectedContent)) {
@@ -652,6 +654,89 @@ class ITImagetool {
     }
 
     /**
+     * Create an image with WDT Model on OL 8-slim
+     *
+     * @throws Exception - if any error occurs
+     */
+    @Test
+    @Order(14)
+    @Tag("gate")
+    @DisplayName("Create Model in Image with OL 8-slim")
+    void createMiiOl8slim(TestInfo testInfo) throws Exception {
+        // test assumes that WDT installer is already in the cache from previous test
+
+        // test assumes that the WLS 12.2.1.3 installer is already in the cache
+
+        // test assumes that the default JDK version 8u202 is already in the cache
+
+        Path tmpWdtModel = Paths.get(wlsImgBldDir, WDT_MODEL1);
+
+        // update wdt model file
+        Files.copy(WDT_RESOURCES.resolve(WDT_MODEL1), tmpWdtModel, StandardCopyOption.REPLACE_EXISTING);
+
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            String tagName = build_tag + ":" + getMethodName(testInfo);
+            String command = new CreateCommand()
+                .tag(tagName)
+                .fromImage("ghcr.io/oracle/oraclelinux", "8-slim")
+                .version(WLS_VERSION)
+                .wdtVersion(WDT_VERSION)
+                .wdtArchive(WDT_ARCHIVE)
+                .wdtModel(tmpWdtModel)
+                .wdtModelOnly(true)
+                .type("wls")
+                .build();
+
+            CommandResult result = Runner.run(command, out, logger);
+            assertEquals(0, result.exitValue(), "for command: " + command);
+
+            // verify the docker image is created
+            assertTrue(imageExists(tagName), "Image was not created: " + tagName);
+
+            verifyFilePermissions("/u01/domains", "drwxr-xr-x", tagName, out);
+            verifyFilePermissions("/u01/wdt", "drwxr-xr-x", tagName, out);
+            verifyFilePermissions("/u01/wdt/models", "drwxr-xr-x", tagName, out);
+            verifyFilePermissions("/u01/wdt/weblogic-deploy", "drwxr-x---", tagName, out);
+            verifyFilePermissions("/u01/oracle", "drwxr-xr-x", tagName, out);
+            verifyFilePermissions("/u01/wdt/weblogic-deploy/bin/createDomain.sh", "-rwxr-x---", tagName, out);
+            verifyFilePermissions("/u01/wdt/weblogic-deploy/bin/validateModel.sh", "-rwxr-x---", tagName, out);
+        }
+    }
+
+    /**
+     * Use the Rebase function to move a domain to a new image.
+     *
+     * @throws Exception - if any error occurs
+     */
+    @Test
+    @Order(15)
+    @Tag("gate")
+    @DisplayName("Create Aux Image")
+    void createAuxImage(TestInfo testInfo) throws Exception {
+        String tagName = build_tag + ":" + getMethodName(testInfo);
+        String command = new CreateAuxCommand()
+            .tag(tagName)
+            .wdtModel(WDT_MODEL)
+            .wdtArchive(WDT_ARCHIVE)
+            .wdtVersion(WDT_VERSION)
+            .build();
+
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(command, out, logger);
+            assertEquals(0, result.exitValue(), "for command: " + command);
+
+            // verify the docker image is created
+            assertTrue(imageExists(tagName), "Image was not created: " + tagName);
+
+            // verify the file created in [before-jdk-install] section
+            verifyFileInImage(tagName, "/auxiliary/models/simple-topology.yaml", "AdminUserName: weblogic");
+            verifyFilePermissions("/auxiliary/models/archive.zip", "-rw-r-----", tagName, out);
+            verifyFilePermissions("/auxiliary/models/archive.zip", "-rw-r-----", tagName, out);
+            verifyFilePermissions("/auxiliary/weblogic-deploy/bin/createDomain.sh", "-rwxr-x---", tagName, out);
+        }
+    }
+
+    /**
      * Create a FMW image with internet access to download PSU.
      * Oracle Support credentials must be provided to download the patches.
      * Uses different JDK version from the default in the Image Tool.
@@ -931,56 +1016,6 @@ class ITImagetool {
     }
 
     /**
-     * Create an image with WDT Model on OL 8-slim
-     *
-     * @throws Exception - if any error occurs
-     */
-    @Test
-    @Order(14)
-    @Tag("gate")
-    @DisplayName("Create Model in Image with OL 8-slim")
-    void createMiiOl8slim(TestInfo testInfo) throws Exception {
-        // test assumes that WDT installer is already in the cache from previous test
-
-        // test assumes that the WLS 12.2.1.3 installer is already in the cache
-
-        // test assumes that the default JDK version 8u202 is already in the cache
-
-        Path tmpWdtModel = Paths.get(wlsImgBldDir, WDT_MODEL1);
-
-        // update wdt model file
-        Files.copy(WDT_RESOURCES.resolve(WDT_MODEL1), tmpWdtModel, StandardCopyOption.REPLACE_EXISTING);
-
-        try (PrintWriter out = getTestMethodWriter(testInfo)) {
-            String tagName = build_tag + ":" + getMethodName(testInfo);
-            String command = new CreateCommand()
-                .tag(tagName)
-                .fromImage("ghcr.io/oracle/oraclelinux", "8-slim")
-                .version(WLS_VERSION)
-                .wdtVersion(WDT_VERSION)
-                .wdtArchive(WDT_ARCHIVE)
-                .wdtModel(tmpWdtModel)
-                .wdtModelOnly(true)
-                .type("wls")
-                .build();
-
-            CommandResult result = Runner.run(command, out, logger);
-            assertEquals(0, result.exitValue(), "for command: " + command);
-
-            // verify the docker image is created
-            assertTrue(imageExists(tagName), "Image was not created: " + tagName);
-
-            validateFilePermissions("/u01/domains", "drwxrwxr-x", tagName, out);
-            validateFilePermissions("/u01/wdt", "drwxrwxr-x", tagName, out);
-            validateFilePermissions("/u01/wdt/models", "drwxrwxr-x", tagName, out);
-            validateFilePermissions("/u01/wdt/weblogic-deploy", "drwxr-x---", tagName, out);
-            validateFilePermissions("/u01/oracle", "drwxr-xr-x", tagName, out);
-            validateFilePermissions("/u01/wdt/weblogic-deploy/bin/createDomain.sh", "-rwxr-x---", tagName, out);
-            validateFilePermissions("/u01/wdt/weblogic-deploy/bin/validateModel.sh", "-rwxr-x---", tagName, out);
-        }
-    }
-
-    /**
      * Verify file permissions for a specified path on the given image.
      * @param path      Filename or Directory to check for permissions value.
      * @param expected  Expected permission string, such as "drwxrwxr-x"
@@ -989,14 +1024,14 @@ class ITImagetool {
      * @throws IOException if process start fails
      * @throws InterruptedException if the wait is interrupted before the process completes
      */
-    private void validateFilePermissions(String path, String expected, String tagName, PrintWriter out)
+    private void verifyFilePermissions(String path, String expected, String tagName, PrintWriter out)
         throws IOException, InterruptedException {
         String command = String.format(" docker run --rm -t %s ls -ld %s", tagName, path);
         String actual = Runner.run(command, out, logger).stdout().trim();
         String[] tokens = actual.split(" ", 2);
         assertEquals(2, tokens.length, "Unable to get file permissions for " + path);
         // When running on an SELinux host, the permissions shown by ls will end with a "."
-        assertTrue(tokens[0].startsWith(expected), "Incorrect file permissions for " + path);
+        assertEquals(expected, tokens[0].substring(0,expected.length()), "Incorrect file permissions for " + path);
     }
 
     /**
@@ -1028,8 +1063,8 @@ class ITImagetool {
 
             // verify the docker image is created
             assertTrue(imageExists(tagName), "Image was not created: " + tagName);
-            validateFilePermissions("/u01/wdt/weblogic-deploy/bin/createDomain.sh", "-rwxr-x---", tagName, out);
-            validateFilePermissions("/u01/wdt/weblogic-deploy/bin/validateModel.sh", "-rwxr-x---", tagName, out);
+            verifyFilePermissions("/u01/wdt/weblogic-deploy/bin/createDomain.sh", "-rwxr-x---", tagName, out);
+            verifyFilePermissions("/u01/wdt/weblogic-deploy/bin/validateModel.sh", "-rwxr-x---", tagName, out);
         }
     }
 
@@ -1063,5 +1098,40 @@ class ITImagetool {
             // verify the docker image is created
             assertTrue(imageExists(tagName), "Image was not created: " + tagName);
         }
+    }
+
+    /**
+     * create WLS image with OpenShift settings.
+     *
+     * @throws Exception - if any error occurs
+     */
+    @Test
+    @Order(30)
+    @Tag("nightly")
+    @DisplayName("Create image with OpenShift settings")
+    void createWlsImgWithOpenShiftSettings(TestInfo testInfo) throws Exception {
+        String tagName = build_tag + ":" + getMethodName(testInfo);
+        String command = new CreateCommand()
+            .jdkVersion(JDK_VERSION)
+            .tag(tagName)
+            .wdtVersion(WDT_VERSION)
+            .wdtArchive(WDT_ARCHIVE)
+            .wdtDomainHome("/u01/domains/simple_domain")
+            .wdtModel(WDT_MODEL, WDT_MODEL2)
+            .wdtVariables(WDT_VARIABLES)
+            .target(KubernetesTarget.OpenShift)
+            .build();
+
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult result = Runner.run(command, out, logger);
+            assertEquals(0, result.exitValue(), "for command: " + command);
+
+            // verify the docker image is created
+            assertTrue(imageExists(tagName), "Image was not created: " + tagName);
+
+            // verify the file permissions on the domain directory were set correctly
+            verifyFilePermissions("/u01/domains/simple_domain", "drwxrwxr-x", tagName, out);
+        }
+
     }
 }

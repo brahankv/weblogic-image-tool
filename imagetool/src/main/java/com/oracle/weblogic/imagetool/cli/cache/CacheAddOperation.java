@@ -8,7 +8,7 @@ import java.nio.file.Path;
 
 import com.oracle.weblogic.imagetool.api.model.CommandResponse;
 import com.oracle.weblogic.imagetool.cachestore.CacheStoreException;
-import picocli.CommandLine;
+import picocli.CommandLine.Option;
 
 import static com.oracle.weblogic.imagetool.cachestore.CacheStoreFactory.cache;
 
@@ -17,23 +17,23 @@ public abstract class CacheAddOperation extends CacheOperation {
     CommandResponse addToCache(String key) throws CacheStoreException {
         // if file is invalid or does not exist, return an error
         if (filePath == null || !Files.isRegularFile(filePath)) {
-            return new CommandResponse(1, "IMG-0049", filePath);
+            return CommandResponse.error("IMG-0049", filePath);
         }
 
         // if the new value is the same as the existing cache value, do nothing
         String existingValue = cache().getValueFromCache(key);
         if (absolutePath().toString().equals(existingValue)) {
-            return new CommandResponse(0, "IMG-0075");
+            return CommandResponse.success("IMG-0075");
         }
 
         // if there is already a cache entry and the user did not ask to force it, return an error
         if (!force && existingValue != null) {
-            return new CommandResponse(1, "IMG-0048", key, existingValue);
+            return CommandResponse.error("IMG-0048", key, existingValue);
         }
 
         // input appears valid, add the entry to the cache and exit
         cache().addToCache(key, absolutePath().toString());
-        return new CommandResponse(0, "IMG-0050", key, cache().getValueFromCache(key));
+        return CommandResponse.success("IMG-0050", key, cache().getValueFromCache(key));
     }
 
     Path absolutePath() {
@@ -45,14 +45,14 @@ public abstract class CacheAddOperation extends CacheOperation {
 
     private Path absolutePath = null;
 
-    @CommandLine.Option(
+    @Option(
         names = {"--force"},
         description = "Overwrite existing entry, if it exists"
     )
     private boolean force = false;
 
 
-    @CommandLine.Option(
+    @Option(
         names = {"--path"},
         description = "Location on disk. For ex: /path/to/patch-or-installer.zip",
         required = true

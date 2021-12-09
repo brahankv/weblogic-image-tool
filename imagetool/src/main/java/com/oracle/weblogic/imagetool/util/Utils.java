@@ -9,7 +9,6 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringWriter;
 import java.net.URL;
@@ -19,14 +18,12 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -37,8 +34,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
 import com.github.mustachejava.DefaultMustacheFactory;
 import com.github.mustachejava.Mustache;
@@ -85,19 +80,13 @@ public class Utils {
      *
      * @param sourcePath   resource path in the local directory
      * @param destPath     local file to copy to.
-     * @param markExec     sets the executable flag if true
      * @throws IOException in case of error
      */
-    public static void copyLocalFile(Path sourcePath, Path destPath, boolean markExec) throws IOException {
+    public static void copyLocalFile(Path sourcePath, Path destPath) throws IOException {
         Objects.requireNonNull(sourcePath);
         Objects.requireNonNull(destPath);
         logger.fine("copyLocalFile: copying file {0}->{1}", sourcePath, destPath);
         Files.copy(sourcePath, destPath, StandardCopyOption.REPLACE_EXISTING);
-        if (markExec) {
-            if (!System.getProperty("os.name").toLowerCase().startsWith("windows")) {
-                Files.setPosixFilePermissions(destPath, PosixFilePermissions.fromString("r-xr-xr-x"));
-            }
-        }
     }
 
     /**
@@ -105,10 +94,9 @@ public class Utils {
      *
      * @param sourcePath   path to the local directory
      * @param destPath     local directory to copy to.
-     * @param markExec     sets the executable flag if true
      * @throws IOException in case of error
      */
-    public static void copyLocalDirectory(Path sourcePath, Path destPath, boolean markExec) throws IOException {
+    public static void copyLocalDirectory(Path sourcePath, Path destPath) throws IOException {
         Objects.requireNonNull(sourcePath);
         Objects.requireNonNull(destPath);
         if (!Files.isDirectory(sourcePath)) {
@@ -124,9 +112,9 @@ public class Utils {
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(sourcePath)) {
             for (Path child : stream) {
                 if (Files.isDirectory(child)) {
-                    copyLocalDirectory(child, destPath.resolve(child.getFileName()), markExec);
+                    copyLocalDirectory(child, destPath.resolve(child.getFileName()));
                 } else if (Files.isRegularFile(child)) {
-                    copyLocalFile(child, destPath.resolve(child.getFileName()), markExec);
+                    copyLocalFile(child, destPath.resolve(child.getFileName()));
                 } else {
                     logger.info("IMG-0035", sourcePath.toString());
                 }
@@ -447,11 +435,11 @@ public class Utils {
 
         byte[] fileBytes = Files.readAllBytes(Paths.get(scriptToRun));
         String encodedFile = Base64.getEncoder().encodeToString(fileBytes);
-        String oneCommand = String.format("echo %s | base64 -d | /bin/bash", encodedFile);
+        String oneCommand = String.format("echo %s | base64 -d | /bin/sh", encodedFile);
         logger.finest("running command in image [" + oneCommand + "]");
         return Stream.of(
             builder, "run", "--rm",
-            dockerImage, "/bin/bash", "-c", oneCommand).collect(Collectors.toList());
+            dockerImage, "/bin/sh", "-c", oneCommand).collect(Collectors.toList());
     }
 
     /**
@@ -488,6 +476,7 @@ public class Utils {
                     break;
             }
         }
+        logger.finer("Discovered proxy setting ({0}): {1}", protocol, retVal);
         return retVal;
     }
 
@@ -522,12 +511,16 @@ public class Utils {
      * Java properties.
      *
      * @param name the name of the environment variable, or Java property
+     * @param defaultValue if no environment variable is defined, nor system property, return this value
      * @return the value defined in the env or system property
      */
-    public static String getEnvironmentProperty(String name) {
+    public static String getEnvironmentProperty(String name, String defaultValue) {
         String result = System.getenv(name);
         if (isEmptyString(result)) {
             result = System.getProperty(name);
+        }
+        if (isEmptyString(result)) {
+            return defaultValue;
         }
         return result;
     }
@@ -538,10 +531,7 @@ public class Utils {
      * @return working directory
      */
     public static String getBuildWorkingDir() throws IOException {
-        String workingDir = getEnvironmentProperty("WLSIMG_BLDDIR");
-        if (workingDir == null) {
-            workingDir = System.getProperty("user.home");
-        }
+        String workingDir = getEnvironmentProperty("WLSIMG_BLDDIR", System.getProperty("user.home"));
         Path path = Paths.get(workingDir);
 
         boolean pathExists = Files.exists(path, LinkOption.NOFOLLOW_LINKS);
@@ -561,46 +551,13 @@ public class Utils {
     }
 
     /**
-     * Return the version number inside a opatch file.
-     *
-     * @param fileName full path to the opatch patch
-     * @return version number of the patch
-     */
-
-    public static String getOpatchVersionFromZip(String fileName) {
-
-        try (ZipFile zipFile = new ZipFile(fileName)) {
-
-            Enumeration<? extends ZipEntry> entries = zipFile.entries();
-
-            while (entries.hasMoreElements()) {
-                ZipEntry entry = entries.nextElement();
-                if (entry.getName().endsWith("/version.txt")) {
-                    InputStream stream = zipFile.getInputStream(entry);
-                    BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(stream));
-                    StringBuilder out = new StringBuilder();
-                    String line;
-                    while ((line = bufferedReader.readLine()) != null) {
-                        out.append(line);
-                    }
-                    return out.toString();
-                }
-            }
-        } catch (IOException ioe) {
-            logger.warning("Cannot read opatch file " + fileName);
-            logger.finer(ioe.getLocalizedMessage());
-        }
-        return null;
-    }
-
-    /**
      * validatePatchIds validate the format of the patch ids.
      *
      * @param patches list of patch ids
      * @return true if all patch IDs are valid , false otherwise.
      */
 
-    public static boolean validatePatchIds(List<String> patches, boolean rigid) {
+    public static boolean validatePatchIds(List<String> patches, boolean rigid) throws InvalidPatchIdFormatException {
         Pattern patchIdPattern;
         if (rigid) {
             patchIdPattern = Pattern.compile(Constants.RIGID_PATCH_ID_REGEX);
@@ -619,8 +576,7 @@ public class Utils {
                         errorFormat = "12345678[_12.2.1.3.0]";
                     }
 
-                    logger.severe("IMG-0004", patchId, errorFormat);
-                    return false;
+                    throw new InvalidPatchIdFormatException(patchId, errorFormat);
                 }
             }
         }

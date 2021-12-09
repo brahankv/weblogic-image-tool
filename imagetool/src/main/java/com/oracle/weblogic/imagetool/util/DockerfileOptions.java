@@ -59,6 +59,8 @@ public class DockerfileOptions {
     private PackageManagerType pkgMgr;
     private List<String> patchFilenames;
     private MiddlewareInstall mwInstallers;
+    private boolean domainGroupAsUser;
+    private boolean usingBusybox;
 
     // WDT values
     private String wdtHome;
@@ -88,20 +90,20 @@ public class DockerfileOptions {
         updateOpatch = false;
         skipJavaInstall = false;
         skipMiddlewareInstall = false;
+        domainGroupAsUser = false;
+        usingBusybox = false;
 
         javaHome = DEFAULT_JAVA_HOME;
         oracleHome = DEFAULT_ORACLE_HOME;
         invLoc = DEFAULT_INV_LOC;
         oraInvDir = DEFAULT_ORAINV_DIR;
 
+        username = "oracle";
+        groupname = "oracle";
         tempDirectory = "/tmp/imagetool";
-
-        baseImageName = "ghcr.io/oracle/oraclelinux:7-slim";
 
         // WDT values
         useWdt = false;
-        wdtHome = "/u01/wdt";
-        wdtModelHome = wdtHome + "/models";
         wdtOperation = WdtOperation.CREATE;
         wdtModelList = new ArrayList<>();
         wdtArchiveList = new ArrayList<>();
@@ -229,9 +231,17 @@ public class DockerfileOptions {
      * @return this DockerfileOptions object
      */
     public DockerfileOptions setWdtModelHome(String value) {
-        if (!Utils.isEmptyString(value)) {
-            wdtModelHome = value;
-        }
+        wdtModelHome = value;
+        return this;
+    }
+
+    /**
+     * Set the directory to use for WDT install.
+     * @param value unix path to the folder name, like /u01/wdt
+     * @return this object
+     */
+    public DockerfileOptions setWdtHome(String value) {
+        wdtHome = value;
         return this;
     }
 
@@ -280,7 +290,16 @@ public class DockerfileOptions {
      * @return this DockerfileOptions object
      */
     public DockerfileOptions setPackageInstaller(PackageManagerType option) {
-        pkgMgr = option;
+        if (PackageManagerType.OS_DEFAULT == option) {
+            if (usingBusybox()) {
+                pkgMgr = PackageManagerType.NONE;
+            } else {
+                // This default must match the Package Manager for the configured fromImage default in baseImageName
+                pkgMgr = PackageManagerType.MICRODNF;
+            }
+        } else {
+            pkgMgr = option;
+        }
         return this;
     }
 
@@ -358,14 +377,26 @@ public class DockerfileOptions {
         return parent != null ? parent : domain_home();
     }
 
+    /**
+     * Referenced by Dockerfile template, returns the path for the WDT model home.
+     * @return the WDT Model home path
+     */
     @SuppressWarnings("unused")
     public String wdt_home() {
         return wdtHome;
     }
 
+    /**
+     * Referenced by Dockerfile template, returns the WDT model home path.
+     * @return the WDT Model home path
+     */
     @SuppressWarnings("unused")
     public String wdt_model_home() {
-        return wdtModelHome;
+        if (!Utils.isEmptyString(wdtModelHome)) {
+            return wdtModelHome;
+        } else {
+            return wdtHome + "/models";
+        }
     }
 
     /**
@@ -375,7 +406,7 @@ public class DockerfileOptions {
      */
     @SuppressWarnings("unused")
     public boolean isWdtModelHomeOutsideWdtHome() {
-        return !wdtModelHome.startsWith(wdtHome + File.separator);
+        return !wdt_model_home().startsWith(wdtHome + File.separator);
     }
 
     @SuppressWarnings("unused")
@@ -700,7 +731,7 @@ public class DockerfileOptions {
         StringJoiner result = new StringJoiner(",", wdtParameterName, "");
         result.setEmptyValue("");
         for (String name : filenames) {
-            result.add(wdtModelHome + "/" + name);
+            result.add(wdt_model_home() + "/" + name);
         }
         return result.toString();
     }
@@ -1014,6 +1045,37 @@ public class DockerfileOptions {
 
     public DockerfileOptions setWdtBase(String value) {
         wdtBase = value;
+        return this;
+    }
+
+    public DockerfileOptions setDomainGroupAsUser(boolean value) {
+        domainGroupAsUser = value;
+        return this;
+    }
+
+    @SuppressWarnings("unused")
+    public boolean domainGroupAsUser() {
+        return domainGroupAsUser;
+    }
+
+    /**
+     * Returns true if BusyBox options should be used in the Dockerfile.
+     *
+     * @return true if BusyBox options should be used in the Dockerfile.
+     */
+    @SuppressWarnings("unused")
+    public boolean usingBusybox() {
+        return usingBusybox;
+    }
+
+    /**
+     * Use BusyBox options in the Dockerfile when this value is true.
+     *
+     * @param value true to use BusyBox options, false otherwise.
+     * @return this
+     */
+    public DockerfileOptions usingBusybox(boolean value) {
+        usingBusybox = value;
         return this;
     }
 }
