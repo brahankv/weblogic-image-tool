@@ -23,8 +23,11 @@ public enum AruProduct {
     WCC("13946", "Oracle WebCenter Content"),
     WCP("15224", "Oracle WebCenter Portal"),
     WCS("20995", "Oracle WebCenter Sites"),
-    JDEV("11281", "Oracle JDeveloper")
-    //FIT("33256", "Fusion Internal Tools") No longer used after July 2020 PSU
+    JDEV("11281", "Oracle JDeveloper"),
+    OPSS("16606", "Oracle Platform Security Service"),
+    OWSM("12787", "Oracle Webservices Manager"),
+    JDBC("9512", "Oracle JDBC for Fusion Middleware"),
+    FIT("33256", "Fusion Internal Tools")
     ;
 
     private final String productId;

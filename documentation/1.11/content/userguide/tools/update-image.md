@@ -14,15 +14,9 @@ command to update the existing container images created with the Image Tool.  Fo
 * Deploy a new application to an existing domain
 * Modify the domain configuration (add a data source, change a port number, and such)
 
-**NOTE**: The WebLogic Image Tool does not support a Stack Patch Bundle (SPB; see Doc ID [2764636.1](https://support.oracle.com/rs?type=doc&id=2764636.1)), because an SPB is _not_ a patch but a mechanism for applying all PSU and recommended CPU and SPU patches to a WebLogic Server installation, similar to invoking the Image Tool `update` command with the `--recommendedPatches` option.
+**NOTE**: The WebLogic Image Tool does not support a Stack Patch Bundle (SPB; see Doc ID [2764636.1](https://support.oracle.com/rs?type=doc&id=2764636.1)), because an SPB is _not_ a patch but a mechanism for applying all PSU and recommended CPU and SPU patches to a WebLogic Server installation.
 
 The required options for the `update` command are marked.
-
-**NOTE**: You can provide the password in one of the three ways:
-
-* Plain text
-* Environment variable
-* File containing the password
 
 ```
 Usage: imagetool update [OPTIONS]
@@ -31,44 +25,46 @@ Update WebLogic Docker image with selected patches
 ```
 | Parameter | Definition | Default |
 | --- | --- | --- |
-| `--fromImage` | (Required) Container image to be updated. The `fromImage` option serves as a starting point for the new image to be created. | `weblogic:12.2.1.3.0`  |
-| `--tag` | (Required) Tag for the final build image. Example: `store/oracle/weblogic:12.2.1.3.0`  |   |
-| `--additionalBuildCommands` | Path to a file with additional build commands. For more details, see [Additional information](#additional-information). |
-| `--additionalBuildFiles` | Additional files that are required by your `additionalBuildCommands`.  A comma separated list of files that should be copied to the build context. |
-| `--builder`, `-b` | Executable to process the Dockerfile. Use the full path of the executable if not on your path. | `docker`  |
-| `--buildNetwork` | Networking mode for the RUN instructions during the image build.  See `--network` for Docker `build`.  |   |
-| `--chown` | `userid:groupid` for JDK/Middleware installs and patches.  | `oracle:oracle` |
-| `--dryRun` | Skip Docker build execution and print the Dockerfile to stdout.  |  |
-| `--httpProxyUrl` | Proxy for the HTTP protocol. Example: `http://myproxy:80` or `http:user:passwd@myproxy:8080`  |   |
-| `--httpsProxyUrl` | Proxy for the HTTPS protocol. Example: `https://myproxy:80` or `https:user:passwd@myproxy:8080`  |   |
-| `--latestPSU` | (DEPRECATED) Find and apply the latest PatchSet Update, see [Additional information](#additional-information).  |   |
-| `--opatchBugNumber` | The patch number for OPatch (patching OPatch).  | `28186730`  |
-| `--password` | Request password for the Oracle Support `--user` on STDIN, see `--user`.  |   |
-| `--passwordEnv` | Environment variable containing the Oracle Support password, see `--user`.  |   |
-| `--passwordFile` | Path to a file containing just the Oracle Support password, see `--user`.  |   |
-| `--patches` | Comma separated list of patch IDs. Example: `12345678,87654321`  |   |
-| `--pull` | Always attempt to pull a newer version of base images during the build.  |   |
-| `--resourceTemplates` | One or more files containing placeholders that need to be resolved by the Image Tool. See [Resource Template Files](#resource-template-files). |   |
-| `--skipcleanup` | Do not delete the build context folder, intermediate images, and failed build containers. For debugging purposes.  |   |
-| `--strictPatchOrdering` |  Instruct OPatch to apply patches one at a time (uses `apply` instead of `napply`). |   |
-| `--target` | Select the target environment in which the created image will be used. Supported values: `Default` (Docker/Kubernetes), `OpenShift` | `Default`  |
-| `--user` | Oracle support email ID.  |   |
-| `--wdtArchive` | A WDT archive ZIP file or comma-separated list of files.  |   |
-| `--wdtDomainHome` | Path to the `-domain_home` for WDT.  | `/u01/domains/base_domain`  |
-| `--wdtDomainType` | WDT domain type. Supported values: `WLS`, `JRF`, `RestrictedJRF`  | `WLS`  |
-| `--wdtEncryptionKey` | Passphrase for WDT -use_encryption that will be requested on STDIN. |   |
-| `--wdtEncryptionKeyEnv` | Passphrase for WDT -use_encryption that is provided as an environment variable. |   |
-| `--wdtEncryptionKeyFile` | Passphrase for WDT -use_encryption that is provided as a file. |   |
-| `--wdtHome` | The target folder in the image for the WDT install and models.  | `/u01/wdt`  |
-| `--wdtJavaOptions` | Java command-line options for WDT.  |   |
-| `--wdtModel` | A WDT model file or a comma-separated list of files.  |   |
+| `--fromImage` | (Required) Container image to be extended. The provided image MUST contain an Oracle Home with middleware installed. The `fromImage` option serves as a starting point for the new image to be created. |  |
+| `--tag` | (Required) Tag for the final build image. Example: `store/oracle/weblogic:12.2.1.3.0` |  |
+| `--additionalBuildCommands` | Path to a file with additional build commands. For more details, see [Additional information](#--additionalbuildcommands). | |
+| `--additionalBuildFiles` | Additional files that are required by your `additionalBuildCommands`.  A comma separated list of files that should be copied to the build context. See [Additional information](#--additionalbuildfiles). |  |
+| `--builder`, `-b` | Executable to process the Dockerfile. Use the full path of the executable if not on your path. | `docker` |
+| `--buildNetwork` | Networking mode for the RUN instructions during the image build.  See `--network` for Docker `build`. | |
+| `--chown` | `userid:groupid` for middleware patches and other operations. | Owner:Group of the Oracle Home |
+| `--dryRun` | Skip Docker build execution and print the Dockerfile to stdout. | |
+| `--httpProxyUrl` | Proxy for the HTTP protocol. Example: `http://myproxy:80` or `http:user:passwd@myproxy:8080` |  |
+| `--httpsProxyUrl` | Proxy for the HTTPS protocol. Example: `https://myproxy:80` or `https:user:passwd@myproxy:8080` |  |
+| `--latestPSU` | (DEPRECATED) Find and apply the latest PatchSet Update, see [Additional information](#--latestpsu). |  |
+| `--opatchBugNumber` | The patch number for OPatch (patching OPatch). | `28186730` |
+| `--password` | Request password for the Oracle Support `--user` on STDIN, see `--user`. |  |
+| `--passwordEnv` | Environment variable containing the Oracle Support password, see `--user`. |  |
+| `--passwordFile` | Path to a file containing just the Oracle Support password, see `--user`.  |  |
+| `--patches` | Comma separated list of patch IDs. Example: `12345678,87654321` |  |
+| `--pull` | Always attempt to pull a newer version of base images during the build. | |
+| `--recommendedPatches` | (DEPRECATED) Find and apply the latest PatchSet Update and recommended patches. This takes precedence over `--latestPSU`. See [Additional information](#--recommendedpatches). |  |
+| `--resourceTemplates` | One or more files containing placeholders that need to be resolved by the Image Tool. See [Resource Template Files](#resource-template-files). |  |
+| `--skipcleanup` | Do not delete the build context folder, intermediate images, and failed build containers. For debugging purposes. |  |
+| `--strictPatchOrdering` | Instruct OPatch to apply patches one at a time (uses `apply` instead of `napply`). |  |
+| `--target` | Select the target environment in which the created image will be used. Supported values: `Default` (Docker/Kubernetes), `OpenShift`. See [Additional information](#--target). | `Default` |
+| `--type` | Installer type. Supported values: `WLS`, `WLSDEV`, `WLSSLIM`, `FMW`, `IDM`, `OSB`, `OUD_WLS`, `SOA_OSB`, `SOA_OSB_B2B`, `MFT`, `WCP`, `OAM`, `OIG`, `OUD`, `OID`, `SOA`, `WCC`, `WCS`, `WCP` | Installer used in `fromImage` |
+| `--user` | Oracle support email ID. When supplying `user`, you must supply the password either as an environment variable using `--passwordEnv`, or as a file using `--passwordFile`, or interactively, on the command line with `--password`. |  |
+| `--wdtArchive` | A WDT archive ZIP file or comma-separated list of files. |  |
+| `--wdtDomainHome` | Path to the `-domain_home` for WDT. | `/u01/domains/base_domain`    |
+| `--wdtDomainType` | WDT domain type. Supported values: `WLS`, `JRF`, `RestrictedJRF` | `WLS` |
+| `--wdtEncryptionKey` | Passphrase for WDT `-use_encryption` that will be requested on STDIN. |  |
+| `--wdtEncryptionKeyEnv` | Passphrase for WDT `-use_encryption` that is provided as an environment variable. |  |
+| `--wdtEncryptionKeyFile` | Passphrase for WDT `-use_encryption` that is provided as a file. |  |
+| `--wdtHome` | The target folder in the image for the WDT install and models. | `/u01/wdt` |
+| `--wdtJavaOptions` | Java command-line options for WDT. |  |
+| `--wdtModel` | A WDT model file or a comma-separated list of files. | |
 | `--wdtModelHome` | The target location in the image to copy WDT model, variable, and archive files. | `{wdtHome}/models` |
-| `--wdtModelOnly` | Install WDT and copy the models to the image, but do not create the domain.  | `false`  |
-| `--wdtOperation` | Create a new domain, or update an existing domain. Supported values: `CREATE`, `UPDATE`, `DEPLOY`  | `CREATE`  |
-| `--wdtRunRCU` | Instruct WDT to run RCU when creating the domain.  |   |
-| `--wdtStrictValidation` | Use strict validation for the WDT validation method. Only applies when using model only.  | `false`  |
-| `--wdtVariables` | A WDT variables file or comma-separated list of files.  |   |
-| `--wdtVersion` | WDT tool version to use.  |   |
+| `--wdtModelOnly` | Install WDT and copy the models to the image, but do not create the domain. | `false` |
+| `--wdtOperation` | Create a new domain, or update an existing domain. Supported values: `CREATE`, `UPDATE`, `DEPLOY` | `CREATE` |
+| `--wdtRunRCU` | Instruct WDT to run RCU when creating the domain. |  |
+| `--wdtStrictValidation` | Use strict validation for the WDT validation method. Only applies when using model only. | `false` |
+| `--wdtVariables` | A WDT variables file or comma-separated list of files. |  |
+| `--wdtVersion` | WDT tool version to use. |  |
 
 ### Additional information
 
@@ -77,11 +73,11 @@ Update WebLogic Docker image with selected patches
 This is an advanced option that let's you provide additional commands to the Docker build step.  
 The input for this parameter is a simple text file that contains one or more of the valid sections. Valid sections for update:
 
-| Section | Build Stage | Timing |
-| --- | --- | --- |
-| `before-wdt-command` | Intermediate (WDT_BUILD) | Before WDT is installed. |
-| `after-wdt-command` | Intermediate (WDT_BUILD) | After WDT domain creation/update is complete. |
-| `final-build-commands` | Final image | After all Image Tool actions are complete, and just before the container image is finalized. |
+| Section | Available Variables | Build Stage | Timing |
+| --- | --- | --- | --- |
+| `before-wdt-command` | `DOMAIN_HOME` | Intermediate (WDT_BUILD) | Before WDT is installed. |
+| `after-wdt-command` | `DOMAIN_HOME` | Intermediate (WDT_BUILD) | After WDT domain creation/update is complete. |
+| `final-build-commands` | `JAVA_HOME` `ORACLE_HOME` `DOMAIN_HOME` | Final image | After all Image Tool actions are complete, and just before the container image is finalized. |
 
 NOTE: Changes made in intermediate stages may not be carried forward to the final image unless copied manually.  
 The Image Tool will copy the domain home and the WDT home directories to the final image.  
@@ -118,9 +114,15 @@ the `after-fmw-install` or `before-wdt-command` sections.
 
 #### `--latestPSU`
 
-The `latestPSU` option will continue to be supported for the CREATE option, but has been deprecated for use in the
+The `latestPSU` option will continue to be supported for the CREATE and REBASE option, but has been deprecated for use in the
 UPDATE option.  Because of the number of patches and their size, using `latestPSU` as an update to an existing image can
-increase the size of the image significantly, and is not recommended.
+increase the size of the image _significantly_, and is not recommended.
+
+#### `--recommendedPatches`
+
+The `recommendedPatches` option will continue to be supported for the CREATE and REBASE option, but has been deprecated for use in the
+UPDATE option.  Because of the number of patches and their size, using `recommendedPatches` as an update to an existing image can
+increase the size of the image _significantly_, and is not recommended.
 
 #### `--target`
 

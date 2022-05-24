@@ -8,7 +8,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.oracle.weblogic.lifecycle.imagetool</groupId>
     <artifactId>imagetool-parent</artifactId>
-    <version>1.10.2-SNAPSHOT</version>
+    <version>1.11.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>WebLogic Image Tool</name>
@@ -31,11 +31,13 @@
     </scm>
 
     <properties>
+        <sonar.organization>oracle</sonar.organization>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <test.groups>gate</test.groups>
-        <aggregate.report.dir>tests/target/site/jacoco-aggregate/jacoco.xml</aggregate.report.dir>
         <skipITs>true</skipITs>
     </properties>
 
@@ -72,11 +74,13 @@
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter-engine</artifactId>
                 <version>5.8.1</version>
+                <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>com.google.guava</groupId>
-                <artifactId>guava</artifactId>
-                <version>29.0-jre</version>
+                <groupId>uk.org.webcompere</groupId>
+                <artifactId>system-stubs-jupiter</artifactId>
+                <version>1.2.0</version>
+                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>com.github.spullara.mustache.java</groupId>
@@ -257,7 +261,22 @@
                 <plugin>
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
-                    <version>0.8.5</version>
+                    <version>0.8.7</version>
+                    <executions>
+                        <execution>
+                            <id>prepare-agent</id>
+                            <goals>
+                                <goal>prepare-agent</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>report</id>
+                            <phase>test</phase>
+                            <goals>
+                                <goal>report</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.sonarsource.scanner.maven</groupId>

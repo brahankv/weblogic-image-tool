@@ -19,8 +19,8 @@ Usage: imagetool rebase [OPTIONS]
 | --- | --- | --- |
 | `--sourceImage` | (Required) Source Image containing the WebLogic domain. |   |
 | `--tag` | (Required) Tag for the final build image. Example: `store/oracle/weblogic:12.2.1.3.0`  |   |
-| `--additionalBuildCommands` | Path to a file with additional build commands. For more details, see [Additional information](#additional-information). |
-| `--additionalBuildFiles` | Additional files that are required by your `additionalBuildCommands`.  A comma separated list of files that should be copied to the build context. |
+| `--additionalBuildCommands` | Path to a file with additional build commands. For more details, see [Additional information](#--additionalbuildcommands). |
+| `--additionalBuildFiles` | Additional files that are required by your `additionalBuildCommands`.  A comma separated list of files that should be copied to the build context. See [Additional information](#--additionalbuildfiles). |
 | `--builder`, `-b` | Executable to process the Dockerfile. Use the full path of the executable if not on your path. | `docker`  |
 | `--buildNetwork` | Networking mode for the RUN instructions during the image build.  See `--network` for Docker `build`.  |   |
 | `--chown` | `userid:groupid` for JDK/Middleware installs and patches.  | `oracle:oracle` |
@@ -33,7 +33,6 @@ Usage: imagetool rebase [OPTIONS]
 | `--inventoryPointerInstallLoc` | Target location for the inventory pointer file.  |   |
 | `--jdkVersion` | Version of the server JDK to install.  | `8u202`  |
 | `--latestPSU` | Find and apply the latest PatchSet Update.  |   |
-| `--recommendedPatches` | Find and apply the latest PatchSet Update and recommended patches. This takes precedence over --latestPSU |   |
 | `--opatchBugNumber` | The patch number for OPatch (patching OPatch).  | `28186730`  |
 | `--packageManager` | Override the default package manager for the base image's operating system. Supported values: `APK`, `APTGET`, `NONE`, `OS_DEFAULT`, `YUM`, `ZYPPER`  | `OS_DEFAULT`  |
 | `--password` | Request password for the Oracle Support `--user` on STDIN, see `--user`.  |   |
@@ -41,12 +40,13 @@ Usage: imagetool rebase [OPTIONS]
 | `--passwordFile` | Path to a file containing just the Oracle Support password, see `--user`.  |   |
 | `--patches` | Comma separated list of patch IDs. Example: `12345678,87654321`  |   |
 | `--pull` | Always attempt to pull a newer version of base images during the build.  |   |
+| `--recommendedPatches` | Find and apply the latest PatchSet Update and recommended patches. This takes precedence over `--latestPSU`. |   |
 | `--skipcleanup` | Do not delete the build context folder, intermediate images, and failed build containers. For debugging purposes.  |   |
 | `--strictPatchOrdering` |  Instruct OPatch to apply patches one at a time (uses `apply` instead of `napply`). |   |
-| `--target` | Select the target environment in which the created image will be used. Supported values: `Default` (Docker/Kubernetes), `OpenShift` | `Default`  |
+| `--target` | Select the target environment in which the created image will be used. Supported values: `Default` (Docker/Kubernetes), `OpenShift`. See [Additional information](#--target). | `Default`  |
 | `--targetImage` | Container image to extend for the domain's new image. |   |
 | `--type` | Installer type. Supported values: `WLS`, `WLSDEV`, `WLSSLIM`, `FMW`, `IDM`, `OSB`, `OUD_WLS`, `SOA_OSB`, `SOA_OSB_B2B`, `MFT`, `WCP`, `OAM`, `OIG`, `OUD`, `OID`, `SOA`, `WCC`, `WCS`, `WCP`  | `WLS`  |
-| `--user` | Your Oracle support email ID.  |   |
+| `--user` | Your Oracle support email ID. When supplying `user`, you must supply the password either as an environment variable using `--passwordEnv`, or as a file using `--passwordFile`, or interactively, on the command line with `--password`. |   |
 | `--version` | Installer version. | `12.2.1.3.0`  |
 
 ### Additional information
@@ -56,13 +56,13 @@ Usage: imagetool rebase [OPTIONS]
 This is an advanced option that let's you provide additional commands to the Docker build step.  
 The input for this parameter is a simple text file that contains one or more of the valid sections. Valid sections for rebase:
 
-| Section | Build Stage | Timing |
-| --- | --- | --- |
-| `before-jdk-install` | Intermediate (JDK_BUILD) | Before the JDK is installed. |
-| `after-jdk-install` | Intermediate (JDK_BUILD) | After the JDK is installed. |
-| `before-fmw-install` | Intermediate (WLS_BUILD) | Before the Oracle Home is created. |
-| `after-fmw-install` | Intermediate (WLS_BUILD) | After all of the Oracle middleware installers are finished. |
-| `final-build-commands` | Final image | After all Image Tool actions are complete, and just before the container image is finalized. |
+| Section | Available Variables | Build Stage | Timing |
+| --- | --- | --- | --- |
+| `before-jdk-install` | `JAVA_HOME` `DOMAIN_HOME`| Intermediate (JDK_BUILD) | Before the JDK is installed. |
+| `after-jdk-install` | `JAVA_HOME` `DOMAIN_HOME` | Intermediate (JDK_BUILD) | After the JDK is installed. |
+| `before-fmw-install` | `JAVA_HOME` `ORACLE_HOME` `DOMAIN_HOME` | Intermediate (WLS_BUILD) | Before the Oracle Home is created. |
+| `after-fmw-install` | `JAVA_HOME` `ORACLE_HOME` `DOMAIN_HOME` | Intermediate (WLS_BUILD) | After all of the Oracle middleware installers are finished. |
+| `final-build-commands` | `JAVA_HOME` `ORACLE_HOME` `DOMAIN_HOME` | Final image | After all Image Tool actions are complete, and just before the container image is finalized. |
 
 **NOTE**: Changes made in intermediate stages may not be carried forward to the final image unless copied manually.  
 The Image Tool will copy the Java Home and the Oracle Home directories to the final image.  

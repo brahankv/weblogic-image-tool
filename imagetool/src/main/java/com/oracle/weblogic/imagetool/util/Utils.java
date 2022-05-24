@@ -181,12 +181,14 @@ public class Utils {
      */
     public static String writeDockerfile(String destPath, String template, DockerfileOptions options, boolean dryRun)
         throws IOException {
+        logger.entering();
         MustacheFactory mf = new DefaultMustacheFactory("docker-files");
         Mustache mustache = mf.compile(template);
         try (FileWriter fw = new FileWriter(destPath)) {
             mustache.execute(fw, options).flush();
         }
 
+        logger.exiting();
         if (dryRun) {
             return mustache.execute(new StringWriter(), options).toString();
         } else {
@@ -450,35 +452,39 @@ public class Utils {
      * @return proxy url for given protocol
      */
     public static String findProxyUrl(String proxyUrl, String protocol) {
-        String retVal = proxyUrl;
-        if (isEmptyString(retVal) && !isEmptyString(protocol)) {
-            switch (protocol.toLowerCase()) {
-                case Constants.HTTP:
-                case Constants.HTTPS:
-                    String envVarName = String.format("%s_proxy", protocol);
-                    retVal = getProxyEnvironmentVariableValue(envVarName);
-                    if (isEmptyString(retVal)) {
-                        String proxyHost = System.getProperty(String.format("%s.proxyHost", protocol), null);
-                        String proxyPort = System.getProperty(String.format("%s.proxyPort", protocol), "80");
-                        if (proxyHost != null) {
-                            retVal = String.format("%s://%s:%s", protocol, proxyHost, proxyPort);
-                        }
-                    }
-                    break;
-                case "none":
-                default:
-                    retVal = getProxyEnvironmentVariableValue("no_proxy");
-                    if (isEmptyString(retVal)) {
-                        retVal = System.getProperty("http.nonProxyHosts", null);
-                        if (!isEmptyString(retVal)) {
-                            retVal = retVal.replaceAll("\\|", ",");
-                        }
-                    }
-                    break;
-            }
+        if (!isEmptyString(proxyUrl)) {
+            return proxyUrl;
         }
-        logger.finer("Discovered proxy setting ({0}): {1}", protocol, retVal);
-        return retVal;
+        String result;
+        switch (protocol.toLowerCase()) {
+            case Constants.HTTP:
+            case Constants.HTTPS:
+                String envVarName = String.format("%s_proxy", protocol);
+                result = getProxyEnvironmentVariableValue(envVarName);
+                if (isEmptyString(result)) {
+                    String proxyHost = System.getProperty(String.format("%s.proxyHost", protocol), null);
+                    String proxyPort = System.getProperty(String.format("%s.proxyPort", protocol), "80");
+                    if (proxyHost != null) {
+                        result = String.format("%s://%s:%s", protocol, proxyHost, proxyPort);
+                    }
+                }
+                break;
+            case "none":
+            default:
+                result = getProxyEnvironmentVariableValue("no_proxy");
+                if (isEmptyString(result)) {
+                    String propertyValue = System.getProperty("http.nonProxyHosts", null);
+                    if (isEmptyString(propertyValue)) {
+                        result = null;
+                    } else {
+                        //http.nonProxyHosts property uses | instead of , as a separator
+                        result = propertyValue.replace("|", ",");
+                    }
+                }
+                break;
+        }
+        logger.finer("Discovered proxy setting ({0}): {1}", protocol, result);
+        return result;
     }
 
     /**
@@ -538,13 +544,13 @@ public class Utils {
         boolean pathExists = Files.exists(path, LinkOption.NOFOLLOW_LINKS);
 
         if (!pathExists) {
-            throw new IOException("Working Directory does not exists " + workingDir);
+            throw new IOException(Utils.getMessage("IMG-0111", workingDir));
         } else {
             if (!Files.isDirectory(path)) {
-                throw new IOException("Working Directory specified is not a directory " + workingDir);
+                throw new IOException(Utils.getMessage("IMG-0112", workingDir));
             }
             if (!Files.isWritable(path)) {
-                throw new IOException("Working Directory specified is not writable " + workingDir);
+                throw new IOException(Utils.getMessage("IMG-0113", workingDir));
             }
         }
 

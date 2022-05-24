@@ -48,4 +48,24 @@ who wish to contribute to the WebLogic Image Tool code will find useful informat
 * [WebLogic Kubernetes Toolkit UI](https://oracle.github.io/weblogic-toolkit-ui/)
 * [WebLogic Monitoring Exporter](https://github.com/oracle/weblogic-monitoring-exporter)
 * [WebLogic Logging Exporter](https://github.com/oracle/weblogic-logging-exporter)
-* [WebLogic Remote Console](https://github.com/oracle/weblogic-remote-console)
+* [WebLogic Remote Console](https://oracle.github.io/weblogic-remote-console/)
+
+### Supported Fusion Middleware (FMW) products
+Use WebLogic Image Tool to create, update, and rebase the following FMW product images:
+
+* Oracle WebLogic Server (WLS)
+* Fusion Middleware Infrastructure (FMW)
+* Oracle BPM Suite for business process (SOA)
+* Oracle Service Bus (OSB)
+* Oracle Analytics Server (OAS)
+* Oracle Data Integrator (ODI)
+* Oracle Access Management (OAM)
+* Oracle Identity Governance (OIG)
+* Oracle Unified Directory (OUD)
+* Universal Content Management (UCM)
+* Oracle Managed File Transfer (MFT)
+* Oracle Internet Directory (OID)
+* Oracle WebCenter Sites (WCS)
+* Oracle Identity Manager (IDM)
+* Oracle WebCenter Content (WCC)
+* Oracle WebCenter Portal (WCP)

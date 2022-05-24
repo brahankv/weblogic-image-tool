@@ -1,4 +1,4 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2022, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.cli.menu;
@@ -64,7 +64,7 @@ public class UpdateImage extends CommonPatchingOptions implements Callable<Comma
             }
             dockerfileOptions.setOracleHome(oracleHome);
 
-            if (wdtOptions.isUsingWdt() && !wdtOptions.modelOnly()) {
+            if (wdtOptions.userProvidedFiles() && !wdtOptions.modelOnly()) {
                 String domainHome = baseImageProperties.getProperty("domainHome", null);
                 if (domainHome == null && wdtOperation == WdtOperation.UPDATE) {
                     return CommandResponse.error("IMG-0071", fromImage());
@@ -77,8 +77,20 @@ public class UpdateImage extends CommonPatchingOptions implements Callable<Comma
 
             String baseImageUsr = baseImageProperties.getProperty("oracleHomeUser");
             String baseImageGrp = baseImageProperties.getProperty("oracleHomeGroup");
-            if (!dockerfileOptions.userid().equals(baseImageUsr) || !dockerfileOptions.groupid().equals(baseImageGrp)) {
-                return CommandResponse.error("IMG-0087", fromImage(), baseImageUsr, baseImageGrp);
+
+            if (isChownSet()) {
+                // --chown for UPDATE no longer makes sense if the value must always be what the fromImage is.
+                if (!dockerfileOptions.userid().equals(baseImageUsr)
+                    || !dockerfileOptions.groupid().equals(baseImageGrp)) {
+                    // if the user specified a --chown that did not match the fromImage(), error
+                    return CommandResponse.error("IMG-0087", fromImage(), baseImageUsr, baseImageGrp);
+                }
+            } else {
+                // if the user did not specify --chown, use the user:group for the Oracle Home found in the --fromImage
+                dockerfileOptions.setUserId(baseImageUsr);
+                dockerfileOptions.setGroupId(baseImageGrp);
+                logger.fine("--chown not set by user. Using values found in --fromImage {0} for --chown {1}:{2}",
+                    fromImage(), baseImageUsr, baseImageGrp);
             }
 
             List<InstalledPatch> installedPatches = Collections.emptyList();
@@ -107,7 +119,7 @@ public class UpdateImage extends CommonPatchingOptions implements Callable<Comma
                 logger.finer("Verifying Patches to WLS ");
 
                 if (userId == null) {
-                    logger.warning("IMG-0009");
+                    logger.info("IMG-0009");
                 } else {
                     if (!Utils.validatePatchIds(patches, false)) {
                         return CommandResponse.error("Patch ID validation failed");
@@ -136,19 +148,14 @@ public class UpdateImage extends CommonPatchingOptions implements Callable<Comma
                 return CommandResponse.error("IMG-0055");
             }
 
-            FmwInstallerType installerType = FmwInstallerType.fromProductList(
-                baseImageProperties.getProperty("oracleInstalledProducts"));
-            if (installerType == null) {
-                logger.fine("Unable to detect installed products from image {0}", fromImage());
+            setImageInstallerType(baseImageProperties.getProperty("oracleInstalledProducts"));
+            if (imageInstallerType == null && applyingRecommendedPatches()) {
                 // This error occurred with the 12.2.1.4 quick slim image because registry.xml was missing data
-                if (applyingPatches()) {
-                    return CommandResponse.error("IMG-0096", fromImage());
-                }
+                logger.warning("IMG-0096", fromImage());
             } else {
-                logger.info("IMG-0094", installerType);
-                // resolve required patches
-                handlePatchFiles(installerType, installedPatches);
+                logger.info("IMG-0094", getInstallerType());
             }
+            handlePatchFiles(installedPatches);
 
             // create dockerfile
             String dockerfile = Utils.writeDockerfile(buildDir() + File.separator + "Dockerfile",
@@ -159,12 +166,10 @@ public class UpdateImage extends CommonPatchingOptions implements Callable<Comma
                 wdtOptions.handleResourceTemplates(imageTag());
             }
         } catch (Exception ex) {
+            logger.throwing(ex);
             return CommandResponse.error(ex.getMessage());
         } finally {
-            if (!skipcleanup) {
-                Utils.deleteFilesRecursively(buildDir());
-                Utils.removeIntermediateDockerImages(buildEngine, buildId());
-            }
+            cleanup();
         }
         Instant endTime = Instant.now();
         logger.finer("Exiting UpdateImage.call ");
@@ -176,6 +181,21 @@ public class UpdateImage extends CommonPatchingOptions implements Callable<Comma
                 Duration.between(startTime, endTime).getSeconds(), imageTag());
         }
     }
+
+    void setImageInstallerType(String value) {
+        imageInstallerType = FmwInstallerType.fromProductList(value);
+    }
+
+    @Override
+    FmwInstallerType getInstallerType() {
+        if (isInstallerTypeSet() || imageInstallerType == null) {
+            return super.getInstallerType();
+        } else {
+            return imageInstallerType;
+        }
+    }
+
+    private FmwInstallerType imageInstallerType;
 
     @Override
     String getInstallerVersion() {

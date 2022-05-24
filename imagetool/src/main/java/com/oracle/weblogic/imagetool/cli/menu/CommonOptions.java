@@ -1,4 +1,4 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2022, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.cli.menu;
@@ -46,7 +46,8 @@ public abstract class CommonOptions {
     private String buildId;
 
     private void handleChown() {
-        if (!isOptionSet("--chown")) {
+        if (!isChownSet()) {
+            // nothing to do, user did not specify --chown on the command line
             return;
         }
 
@@ -75,8 +76,8 @@ public abstract class CommonOptions {
                 throw new FileNotFoundException(Utils.getMessage("IMG-0030", additionalBuildCommandsPath));
             }
 
-            AdditionalBuildCommands additionalBuildCommands = AdditionalBuildCommands.load(additionalBuildCommandsPath);
-            dockerfileOptions.setAdditionalBuildCommands(additionalBuildCommands.getContents());
+            AdditionalBuildCommands additionalBuildCommands = new AdditionalBuildCommands(additionalBuildCommandsPath);
+            dockerfileOptions.setAdditionalBuildCommands(additionalBuildCommands.getContents(dockerfileOptions));
         }
 
         if (additionalBuildFiles != null) {
@@ -167,10 +168,10 @@ public abstract class CommonOptions {
         handleChown();
         handleAdditionalBuildCommands();
 
-        if (kubernetesTarget == KubernetesTarget.OpenShift) {
+        if (kubernetesTarget == KubernetesTarget.OPENSHIFT) {
             dockerfileOptions.setDomainGroupAsUser(true);
             // if the user did not set the OS user:group, make the default oracle:root, instead of oracle:oracle
-            if (!isOptionSet(osUserAndGroup)) {
+            if (!isChownSet()) {
                 dockerfileOptions.setGroupId("root");
             }
         }
@@ -240,7 +241,16 @@ public abstract class CommonOptions {
         Utils.removeIntermediateDockerImages(buildEngine, buildId());
     }
 
-    private boolean isOptionSet(String optionName) {
+    /**
+     * If the user provided a value to alter the default user:group, return true.
+     *
+     * @return true if the user provided a value to change user:group.
+     */
+    public boolean isChownSet() {
+        return isOptionSet("--chown");
+    }
+
+    boolean isOptionSet(String optionName) {
         CommandLine.ParseResult pr = spec.commandLine().getParseResult();
         return pr.hasMatchedOption(optionName);
     }
@@ -373,7 +383,7 @@ public abstract class CommonOptions {
         description = "Apply settings appropriate to the target environment.  Default: ${DEFAULT-VALUE}."
             + "  Supported values: ${COMPLETION-CANDIDATES}."
     )
-    KubernetesTarget kubernetesTarget = KubernetesTarget.Default;
+    KubernetesTarget kubernetesTarget = KubernetesTarget.DEFAULT;
 
     @SuppressWarnings("unused")
     @Unmatched
