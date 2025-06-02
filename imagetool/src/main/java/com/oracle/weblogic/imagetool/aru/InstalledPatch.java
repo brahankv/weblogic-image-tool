@@ -1,4 +1,4 @@
-// Copyright (c) 2021, Oracle and/or its affiliates.
+// Copyright (c) 2022, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.aru;
@@ -18,6 +18,13 @@ public class InstalledPatch {
     private String bugNumber;
     private String uniquePatchNumber;
     private String patchDescription;
+
+    // Patterns for matching PSU versions in patch descriptions
+    private static final Pattern PSU_VERSION_PATTERN = Pattern.compile(
+        "WLS PATCH SET UPDATE (?:"
+            + "(\\d+\\.\\d+\\.\\d+\\.\\d+\\.)\\d+\\(ID:(\\d+)\\.\\d+\\)|"  // Pattern for format: x.x.x.x.0(ID:123456.0)
+            + "(\\d+\\.\\d+\\.\\d+\\.\\d+\\.[1-9]\\d+)"                     // Pattern for format: x.x.x.x.nn
+        + ")");
 
     /**
      * Parse the output from the image probe list of Oracle patches.
@@ -54,39 +61,39 @@ public class InstalledPatch {
      * @return the version of the PSU, or null if no PSU is found.
      */
     public static String getPsuVersion(List<InstalledPatch> installedPatches) {
-        String result = null;
-        // search inventory for PSU and extract PSU version, if available
-        Pattern patternOne = Pattern.compile(
-            "WLS PATCH SET UPDATE (\\d+\\.\\d+\\.\\d+\\.\\d+\\.)\\d+\\(ID:(\\d+)\\.\\d+\\)");
-        Pattern patternTwo = Pattern.compile(
-            "WLS PATCH SET UPDATE (\\d+\\.\\d+\\.\\d+\\.\\d+\\.[1-9]\\d+)");
+        if (installedPatches == null || installedPatches.isEmpty()) {
+            return null;
+        }
 
         for (InstalledPatch patch : installedPatches) {
-            String description = patch.getPatchDescription();
-            Matcher matchPatternOne = patternOne.matcher(description);
-            Matcher matchPatternTwo = patternTwo.matcher(description);
-            if (matchPatternOne.find()) {
-                result = matchPatternOne.group(1) + matchPatternOne.group(2);
-                logger.fine("Found PSU in inventory {0}, in {1}", result, description);
-                break;
-            } else if (matchPatternTwo.find()) {
-                result = matchPatternTwo.group(1);
-                logger.fine("Found PSU in inventory {0}, in {1}", result, description);
-                break;
+            String description = patch.patchDescription();
+            Matcher matcher = PSU_VERSION_PATTERN.matcher(description);
+            
+            if (matcher.find()) {
+                String psuVersion;
+                if (matcher.group(1) != null) {
+                    // Handle format: x.x.x.x.0(ID:123456.0)
+                    psuVersion = matcher.group(1) + matcher.group(2);
+                } else {
+                    // Handle format: x.x.x.x.nn
+                    psuVersion = matcher.group(3);
+                }
+                logger.fine("Found PSU in inventory {0}, in {1}", psuVersion, description);
+                return psuVersion;
             }
         }
-        return result;
+        return null;
     }
 
-    public String getBugNumber() {
+    public String bugNumber() {
         return bugNumber;
     }
 
-    public String getUniquePatchNumber() {
+    public String uniquePatchNumber() {
         return uniquePatchNumber;
     }
 
-    public String getPatchDescription() {
+    public String patchDescription() {
         return patchDescription;
     }
 

@@ -5,7 +5,6 @@ package com.oracle.weblogic.imagetool.tests;
 
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
@@ -53,11 +52,12 @@ class ITImagetool {
 
     // STAGING_DIR - directory where JDK and other installers are pre-staged before testing
     private static final String STAGING_DIR = System.getProperty("STAGING_DIR");
-    private static final String wlsImgBldDir = System.getProperty("WLSIMG_BLDDIR");
-    private static final String wlsImgCacheDir = System.getProperty("WLSIMG_CACHEDIR");
+    private static final String BLDDIR_ENV = System.getProperty("WLSIMG_BLDDIR");
+    private static final String CACHEDIR_ENV = System.getProperty("WLSIMG_CACHEDIR");
 
     // Docker images
-    private static final String DB_IMAGE = System.getProperty("DB_IMAGE");
+    private static String DB_IMAGE = System.getProperty("DB_IMAGE");
+    private static String JRE_IMAGE = System.getProperty("JRE_IMAGE");
 
     // Staging Dir files
     private static final String JDK_INSTALLER = "jdk-8u202-linux-x64.tar.gz";
@@ -74,7 +74,7 @@ class ITImagetool {
     private static final String WLS_VERSION = "12.2.1.3.0";
     private static final String OPATCH_VERSION = "13.9.4.2.2";
     private static final String JDK_VERSION = "8u202";
-    private static final String JDK_VERSION_8u212 = "8u212";
+    private static final String JDK_VERSION_212 = "8u212";
     private static final String WDT_VERSION = "1.1.2";
     private static final Path WDT_ARCHIVE = Paths.get("target", "wdt", "archive.zip");
     private static final Path WDT_RESOURCES = Paths.get("src", "test", "resources", "wdt");
@@ -92,11 +92,11 @@ class ITImagetool {
         logger.info("Initializing the tests ...");
 
         List<String> missingSettings = new ArrayList<>();
-        if (Utils.isEmptyString(wlsImgBldDir)) {
+        if (Utils.isEmptyString(BLDDIR_ENV)) {
             missingSettings.add("WLSIMG_BLDDIR");
         }
 
-        if (Utils.isEmptyString(wlsImgCacheDir)) {
+        if (Utils.isEmptyString(CACHEDIR_ENV)) {
             missingSettings.add("WLSIMG_CACHEDIR");
         }
 
@@ -104,29 +104,36 @@ class ITImagetool {
             missingSettings.add("STAGING_DIR");
         }
 
-        if (Utils.isEmptyString(DB_IMAGE)) {
-            missingSettings.add("DB_IMAGE");
-        }
-
-        if (missingSettings.size() > 0) {
+        if (!missingSettings.isEmpty()) {
             String error = String.join(", ", missingSettings)
                 + " must be set as a system property in the pom.xml";
             throw new IllegalArgumentException(error);
         }
 
+        if (Utils.isEmptyString(DB_IMAGE)) {
+            //default to container-registry.oracle.com image
+            DB_IMAGE = "container-registry.oracle.com/database/enterprise:12.2.0.1-slim";
+        }
+
+        if (Utils.isEmptyString(JRE_IMAGE)) {
+            //default to container-registry.oracle.com image
+            JRE_IMAGE = "container-registry.oracle.com/java/serverjre:8";
+        }
+
         // get the build tag from Jenkins build environment variable BUILD_TAG
         build_tag = System.getenv("BUILD_TAG");
         if (build_tag != null) {
-            build_tag = build_tag.toLowerCase();
+            build_tag = build_tag.toLowerCase().replaceAll("\\s+", "-");
         } else {
             build_tag = "imagetool-itest";
         }
         dbContainerName = "InfraDB4" + build_tag;
         logger.info("build_tag = " + build_tag);
-        logger.info("WLSIMG_BLDDIR = " + wlsImgBldDir);
-        logger.info("WLSIMG_CACHEDIR = " + wlsImgCacheDir);
+        logger.info("WLSIMG_BLDDIR = " + BLDDIR_ENV);
+        logger.info("WLSIMG_CACHEDIR = " + CACHEDIR_ENV);
         logger.info("STAGING_DIR = " + STAGING_DIR);
         logger.info("DB_IMAGE = " + DB_IMAGE);
+        logger.info("JRE_IMAGE = " + JRE_IMAGE);
     }
 
     private static void verifyStagedFiles(String... installers) {
@@ -138,7 +145,7 @@ class ITImagetool {
                 missingInstallers.add(installer);
             }
         }
-        if (missingInstallers.size() > 0) {
+        if (!missingInstallers.isEmpty()) {
             String error = "Could not find these installers in the staging directory: " + STAGING_DIR + "\n   ";
             error += String.join("\n   ", missingInstallers);
             throw new IllegalStateException(error);
@@ -201,10 +208,10 @@ class ITImagetool {
 
         logger.info("Setting up the test environment ...");
 
-        if (!(new File(wlsImgBldDir)).exists()) {
-            logger.info(wlsImgBldDir + " does not exist, creating it");
-            if (!(new File(wlsImgBldDir)).mkdir()) {
-                throw new IllegalStateException("Unable to create build directory " + wlsImgBldDir);
+        if (!(new File(BLDDIR_ENV)).exists()) {
+            logger.info(BLDDIR_ENV + " does not exist, creating it");
+            if (!(new File(BLDDIR_ENV)).mkdir()) {
+                throw new IllegalStateException("Unable to create build directory " + BLDDIR_ENV);
             }
         }
 
@@ -251,7 +258,7 @@ class ITImagetool {
             Files.createDirectories(outputPath.getParent());
             logger.info("Test log: {0}", outputPath.toString());
             return new PrintWriter(
-                new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outputPath.toString()))), true);
+                new BufferedWriter(new OutputStreamWriter(Files.newOutputStream(outputPath))), true);
         } else {
             throw new IllegalArgumentException("Method is not present in this context, and this method cannot be used");
         }
@@ -536,6 +543,36 @@ class ITImagetool {
         }
     }
 
+    @Test
+    @Order(8)
+    @Tag("nightly")
+    @Tag("cache")
+    @DisplayName("Add FMW installer to cache")
+    void cacheAddInstallerFmw(TestInfo testInfo) throws Exception {
+        // add fmw installer to the cache
+        String addCommand = new CacheCommand()
+            .addInstaller(true)
+            .type("fmw")
+            .version(WLS_VERSION)
+            .path(Paths.get(STAGING_DIR, FMW_INSTALLER))
+            .build();
+
+
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            CommandResult addResult = Runner.run(addCommand, out, logger);
+            // the process return code for addInstaller should be 0
+            assertEquals(0, addResult.exitValue(), "for command: " + addCommand);
+
+            // verify the result
+            String listCommand = new CacheCommand().listItems(true).build();
+            CommandResult listResult = Runner.run(listCommand, out, logger);
+            // the process return code for listItems should be 0
+            assertEquals(0, listResult.exitValue(), "for command: " + listCommand);
+            // output should show newly added WLS installer
+            assertTrue(listResult.stdout().contains("fmw_" + WLS_VERSION + "="));
+        }
+    }
+
     /**
      * create a WLS image with default WLS version.
      *
@@ -669,7 +706,7 @@ class ITImagetool {
 
         // test assumes that the default JDK version 8u202 is already in the cache
 
-        Path tmpWdtModel = Paths.get(wlsImgBldDir, WDT_MODEL1);
+        Path tmpWdtModel = Paths.get(BLDDIR_ENV, WDT_MODEL1);
 
         // update wdt model file
         Files.copy(WDT_RESOURCES.resolve(WDT_MODEL1), tmpWdtModel, StandardCopyOption.REPLACE_EXISTING);
@@ -751,7 +788,7 @@ class ITImagetool {
         // add jdk 8u212 installer to the cache
         String addNewJdkCmd = new CacheCommand().addInstaller(true)
             .type("jdk")
-            .version(JDK_VERSION_8u212)
+            .version(JDK_VERSION_212)
             .path(Paths.get(STAGING_DIR, JDK_INSTALLER_NEWER))
             .build();
 
@@ -760,22 +797,11 @@ class ITImagetool {
             // the process return code for addInstaller should be 0
             assertEquals(0, addNewJdkResult.exitValue(), "for command: " + addNewJdkCmd);
 
-            // add fmw installer to the cache
-            String addCommand = new CacheCommand()
-                .addInstaller(true)
-                .type("fmw")
-                .version(WLS_VERSION)
-                .path(Paths.get(STAGING_DIR, FMW_INSTALLER))
-                .build();
-            CommandResult addResult = Runner.run(addCommand, out, logger);
-            // the process return code for addInstaller should be 0
-            assertEquals(0, addResult.exitValue(), "for command: " + addCommand);
-
             String tagName = build_tag + ":" + getMethodName(testInfo);
-            // create an an image with FMW and the latest PSU using ARU to download the patch
+            // create an image with FMW and the latest PSU using ARU to download the patch
             String command = new CreateCommand()
                 .tag(tagName)
-                .jdkVersion(JDK_VERSION_8u212)
+                .jdkVersion(JDK_VERSION_212)
                 .type("fmw")
                 .user(oracleSupportUsername)
                 .passwordEnv("ORACLE_SUPPORT_PASSWORD")
@@ -792,7 +818,6 @@ class ITImagetool {
 
     /**
      * create a JRF domain image using WDT
-     * You need to have OCR credentials to pull container-registry.oracle.com/database/enterprise:12.2.0.1-slim
      *
      * @throws Exception - if any error occurs
      */
@@ -810,7 +835,7 @@ class ITImagetool {
 
         // test assumes that the default JDK version 8u202 is already in the cache
 
-        Path tmpWdtModel = Paths.get(wlsImgBldDir, WDT_MODEL1);
+        Path tmpWdtModel = Paths.get(BLDDIR_ENV, WDT_MODEL1);
 
         // update wdt model file
         Files.copy(WDT_RESOURCES.resolve(WDT_MODEL1), tmpWdtModel, StandardCopyOption.REPLACE_EXISTING);
@@ -976,7 +1001,7 @@ class ITImagetool {
         String tagName = build_tag + ":" + getMethodName(testInfo);
         String command = new CreateCommand()
             .tag(tagName)
-            .fromImage("container-registry.oracle.com/java/serverjre:8")
+            .fromImage(JRE_IMAGE)
             .build();
 
         try (PrintWriter out = getTestMethodWriter(testInfo)) {
@@ -1133,5 +1158,43 @@ class ITImagetool {
             verifyFilePermissions("/u01/domains/simple_domain", "drwxrwxr-x", tagName, out);
         }
 
+    }
+
+    /**
+     * create a WLS image using a JAR installer not in a zip.
+     *
+     * @throws Exception - if any error occurs
+     */
+    @Test
+    @Order(31)
+    @Tag("nightly")
+    @DisplayName("Create WebLogic Server image from a JAR")
+    void createWlsImgFromJar(TestInfo testInfo) throws Exception {
+        // Create an imagetool command to cache the JAR installer for 12.2.1.4.0
+        String cacheCommand = new CacheCommand()
+            .addInstaller(true)
+            .type("wls")
+            .version("12.2.1.4.0")
+            .path(Paths.get(STAGING_DIR, "fmw_12.2.1.4.0_wls_lite_generic.jar"))
+            .build();
+
+        // Create an imagetool command to build the image for 12.2.1.4.0
+        String tagName = build_tag + ":" + getMethodName(testInfo);
+        String buildCommand = new CreateCommand()
+            .tag(tagName)
+            .version("12.2.1.4.0")
+            .build();
+
+        try (PrintWriter out = getTestMethodWriter(testInfo)) {
+            // run imagetool cache command
+            CommandResult cacheResult = Runner.run(cacheCommand, out, logger);
+            assertEquals(0, cacheResult.exitValue(), "for command: " + cacheCommand);
+            // run imagetool build command
+            CommandResult buildResult = Runner.run(buildCommand, out, logger);
+            assertEquals(0, buildResult.exitValue(), "for command: " + buildCommand);
+
+            // verify that the container image was created
+            assertTrue(imageExists(tagName), "Image was not created: " + tagName);
+        }
     }
 }

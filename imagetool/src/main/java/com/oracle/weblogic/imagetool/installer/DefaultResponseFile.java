@@ -1,4 +1,4 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2023, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.installer;
@@ -28,11 +28,13 @@ public class DefaultResponseFile implements ResponseFile {
         "Collocated Oracle Identity and Access Manager (Managed through WebLogic server)";
     private static final String R_OAM =
         "Collocated Oracle Identity and Access Manager (Managed through WebLogic server)";
+    private static final String R_OHS = "Standalone HTTP Server (Managed independently of WebLogic server)";
     private static final String R_OUD = "Installation for Oracle Unified Directory";
     private static final String R_OID = "Collocated Oracle Internet Directory Server (Managed through WebLogic server)";
     private static final String R_WCC = "WebCenter Content";
     private static final String R_WCP = "WebCenter Portal";
     private static final String R_WCS = "WebCenter Sites";
+    private static final String R_ODI = "Oracle Data Integrator";
 
     private final String installTypeResponse;
     private final String filename;
@@ -75,6 +77,9 @@ public class DefaultResponseFile implements ResponseFile {
             case OAM:
                 response = R_OAM;
                 break;
+            case OHS:
+                response = R_OHS;
+                break;
             case OUD:
                 response = R_OUD;
                 break;
@@ -89,6 +94,9 @@ public class DefaultResponseFile implements ResponseFile {
                 break;
             case WCS:
                 response = R_WCS;
+                break;
+            case ODI:
+                response = R_ODI;
                 break;
             case WLS:
             default:

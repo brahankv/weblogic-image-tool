@@ -1,4 +1,4 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2023, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.installer;
@@ -19,15 +19,18 @@ public enum InstallerType {
     MFT("mft"),
     IDM("idm"),
     OAM("oam"),
+    OHS("ohs"),
+    DB19("db19"),
     OUD("oud"),
     OID("oid"),
     WCC("wcc"),
     WCP("wcp"),
     WCS("wcs"),
     JDK("jdk"),
-    WDT("wdt");
+    WDT("wdt"),
+    ODI("odi");
 
-    private String value;
+    private final String value;
 
     /**
      * Create an Enum value for the installer type.

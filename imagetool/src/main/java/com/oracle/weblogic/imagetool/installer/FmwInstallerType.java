@@ -1,8 +1,9 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.installer;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -24,8 +25,9 @@ public enum FmwInstallerType {
     // data from https://updates.oracle.com/Orion/Services/metadata?table=aru_products
 
     // Oracle WebLogic Server
-    WLS(Utils.toSet(AruProduct.WLS, AruProduct.COH, AruProduct.FMWPLAT, AruProduct.FIT, AruProduct.JDBC),
-        InstallerType.WLS),
+    WLS(Utils.toSet(AruProduct.WLS, AruProduct.COH, AruProduct.FMWPLAT, AruProduct.FIT, AruProduct.JDBC,
+        AruProduct.FMW_GLCM,
+        AruProduct.OSS), InstallerType.WLS), // Added OSS for a special patching issue for 12.2.1.4 JDBC fix
     WLSSLIM(Utils.toSet(WLS.products),
         InstallerType.WLSSLIM),
     WLSDEV(Utils.toSet(WLS.products),
@@ -78,40 +80,42 @@ public enum FmwInstallerType {
         InstallerType.FMW, InstallerType.WCP),
     // Oracle WebCenter Sites
     WCS(Utils.toSet(FMW.products, AruProduct.WCS),
-        InstallerType.FMW, InstallerType.WCS)
+        InstallerType.FMW, InstallerType.WCS),
+    OHS(Utils.toSet(AruProduct.OHS, AruProduct.OAM_WG, AruProduct.WLS, AruProduct.JDBC, AruProduct.FMWPLAT,
+        AruProduct.OSS, AruProduct.FIT, AruProduct.JRF, AruProduct.FMW_GLCM),
+        InstallerType.OHS) {
+        @Override
+        public List<InstallerType> installerList(String version) {
+            List<InstallerType> ohsInstallers = new ArrayList<>(Arrays.asList(OHS.installers));
+            if (version.equals("12.2.1.4.0")) {
+                ohsInstallers.add(InstallerType.DB19);
+            }
+            return ohsInstallers;
+        }
+    },
+    ODI(Collections.singleton(AruProduct.ODI),
+        InstallerType.ODI)
     ;
 
     private final InstallerType[] installers;
     private final Set<AruProduct> products;
+
     FmwInstallerType(Set<AruProduct> products, InstallerType... installers) {
         this.installers = installers;
         this.products = products;
     }
 
-    public List<InstallerType> installerList() {
+    @SuppressWarnings("unused") // version parameter is needed in the OHS override function
+    public List<InstallerType> installerList(String version) {
         return Arrays.asList(installers);
     }
 
-    public String installerListString() {
-        return Arrays.stream(installers).map(Object::toString).collect(Collectors.joining(", "));
+    public String installerListString(String version) {
+        return installerList(version).stream().map(Object::toString).collect(Collectors.joining(", "));
     }
 
     public Set<AruProduct> products() {
         return products;
-    }
-
-    /**
-     * Create the FMW installer type Enum from the String value.
-     * @param value the installer type string, ignoring case.
-     * @return the enum installer type.
-     */
-    public static FmwInstallerType fromValue(String value) {
-        for (FmwInstallerType type : values()) {
-            if (type.name().equalsIgnoreCase(value)) {
-                return type;
-            }
-        }
-        throw new IllegalArgumentException(Utils.getMessage("IMG-0080", value));
     }
 
     private static final List<FmwInstallerType> weblogicServerTypes = Arrays.asList(WLS, WLSDEV, WLSSLIM);
@@ -119,8 +123,8 @@ public enum FmwInstallerType {
     private static final LoggingFacade logger = LoggingFactory.getLogger(FmwInstallerType.class);
 
     /**
-     * Return a list of all WebLogic Server types (not JRF types).
-     * @return list of WLS enum types.
+     * Returns true if the installer type is a WLS installer, WLS, WLSDEV, or WLSSLIM.
+     * @return true if the installer is a WLS installer type.
      */
     public static boolean isBaseWeblogicServer(FmwInstallerType value) {
         return weblogicServerTypes.contains(value);

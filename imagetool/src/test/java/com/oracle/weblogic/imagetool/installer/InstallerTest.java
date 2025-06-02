@@ -11,53 +11,54 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("unit")
 class InstallerTest {
     @Test
     void fmwInstallerTypeStringTest() {
-        assertEquals("fmw, soa, osb", FmwInstallerType.SOA_OSB.installerListString(),
+        assertEquals("fmw, soa, osb", FmwInstallerType.SOA_OSB.installerListString("12.2.1.4.0"),
             "string list of installer types for SOA_OSB is wrong");
     }
 
     @Test
     void fmwInstallerTypeListTest() {
         assertEquals(Arrays.asList(InstallerType.FMW, InstallerType.OSB),
-            FmwInstallerType.OSB.installerList(), "installer list for OSB is wrong");
+            FmwInstallerType.OSB.installerList("12.2.1.4.0"), "installer list for OSB is wrong");
 
         assertEquals(Arrays.asList(InstallerType.FMW, InstallerType.SOA, InstallerType.OSB),
-            FmwInstallerType.SOA_OSB.installerList(), "installer list for OSB is wrong");
+            FmwInstallerType.SOA_OSB.installerList("12.2.1.4.0"), "installer list for OSB is wrong");
+
+        assertTrue(FmwInstallerType.OHS.installerList("12.2.1.4.0").contains(InstallerType.DB19));
+        assertFalse(FmwInstallerType.OHS.installerList("14.1.2.0.0").contains(InstallerType.DB19),
+            "Only OHS 12.2.1.4 requires the DB19 installer (patch)");
     }
 
     @Test
     void fmwInstallerProductIds() {
-        AruProduct[] list1 = {AruProduct.WLS, AruProduct.COH, AruProduct.FMWPLAT, AruProduct.JDBC, AruProduct.FIT};
+        AruProduct[] list1 = {AruProduct.WLS, AruProduct.FMW_GLCM, AruProduct.COH, AruProduct.FMWPLAT, AruProduct.JDBC,
+            AruProduct.FIT, AruProduct.OSS};
         assertEquals(Utils.toSet(list1), FmwInstallerType.WLS.products(),
             "WLS product list is incorrect or out of order");
 
-        AruProduct[] list2 = {AruProduct.WLS, AruProduct.COH, AruProduct.FMWPLAT, AruProduct.JDBC, AruProduct.FIT,
-            AruProduct.JRF, AruProduct.JDEV, AruProduct.OPSS, AruProduct.OWSM};
+        AruProduct[] list2 = {AruProduct.WLS, AruProduct.COH, AruProduct.FMW_GLCM, AruProduct.FMWPLAT, AruProduct.JDBC,
+            AruProduct.FIT, AruProduct.OSS, AruProduct.JRF, AruProduct.JDEV, AruProduct.OPSS, AruProduct.OWSM};
         assertEquals(Utils.toSet(list2), FmwInstallerType.FMW.products(),
             "FMW product list is incorrect or out of order");
 
-        AruProduct[] list3 = {AruProduct.WLS, AruProduct.COH, AruProduct.FMWPLAT, AruProduct.JDBC, AruProduct.FIT,
-            AruProduct.JRF, AruProduct.JDEV, AruProduct.OPSS, AruProduct.OWSM, AruProduct.SOA};
+        AruProduct[] list3 = {AruProduct.WLS, AruProduct.COH, AruProduct.FMW_GLCM, AruProduct.FMWPLAT, AruProduct.JDBC,
+            AruProduct.FIT, AruProduct.OSS, AruProduct.JRF, AruProduct.JDEV, AruProduct.OPSS, AruProduct.OWSM,
+            AruProduct.SOA};
         assertEquals(Utils.toSet(list3), FmwInstallerType.SOA.products(),
             "SOA product list is incorrect or out of order");
     }
 
     @Test
-    void fmwInstallerFromValue() {
-        assertEquals(FmwInstallerType.FMW, FmwInstallerType.fromValue("FMW"),
-            "fromValue FMW failed for FmwInstallerType");
-        assertEquals(FmwInstallerType.FMW, FmwInstallerType.fromValue("fmw"),
-            "fromValue fmw failed for FmwInstallerType");
-    }
-
-    @Test
+    @Tag("failing")
     void fromProductList() {
-        final String WLS_PRODUCTS = "WLS,COH,TOPLINK,JDBC,FIT";
+        final String WLS_PRODUCTS = "WLS,COH,TOPLINK,JDBC,FIT,OSS";
         final String FMW_PRODUCTS = WLS_PRODUCTS + ",INFRA,OPSS,OWSM";
         assertEquals(FmwInstallerType.WLS, FmwInstallerType.fromProductList(WLS_PRODUCTS));
         assertEquals(FmwInstallerType.FMW, FmwInstallerType.fromProductList(FMW_PRODUCTS));

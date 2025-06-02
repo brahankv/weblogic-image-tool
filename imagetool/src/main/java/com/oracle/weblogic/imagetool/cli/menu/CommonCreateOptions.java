@@ -1,4 +1,4 @@
-// Copyright (c) 2021, 2022, Oracle and/or its affiliates.
+// Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.cli.menu;
@@ -11,6 +11,7 @@ import javax.xml.xpath.XPathExpressionException;
 
 import com.oracle.weblogic.imagetool.api.model.CachedFile;
 import com.oracle.weblogic.imagetool.aru.AruException;
+import com.oracle.weblogic.imagetool.installer.FmwInstallerType;
 import com.oracle.weblogic.imagetool.installer.InstallerType;
 import com.oracle.weblogic.imagetool.installer.MiddlewareInstall;
 import com.oracle.weblogic.imagetool.logging.LoggingFacade;
@@ -34,16 +35,17 @@ public class CommonCreateOptions extends CommonPatchingOptions {
         copyOptionsFromImage();
 
         if (dockerfileOptions.installJava()) {
-            CachedFile jdk = new CachedFile(InstallerType.JDK, jdkVersion);
+            CachedFile jdk = new CachedFile(InstallerType.JDK, jdkVersion, getTargetArchitecture());
             Path installerPath = jdk.copyFile(cache(), buildDir());
             dockerfileOptions.setJavaInstaller(installerPath.getFileName().toString());
         }
 
         if (dockerfileOptions.installMiddleware()) {
-            MiddlewareInstall install =
-                new MiddlewareInstall(getInstallerType(), installerVersion, installerResponseFiles);
+            MiddlewareInstall install = new MiddlewareInstall(getInstallerType(), installerVersion,
+                installerResponseFiles, getTargetArchitecture());
             install.copyFiles(cache(), buildDir());
             dockerfileOptions.setMiddlewareInstall(install);
+            dockerfileOptions.includeBinaryOsPackages(getInstallerType().equals(FmwInstallerType.OHS));
         } else {
             dockerfileOptions.setWdtBase("os_update");
         }

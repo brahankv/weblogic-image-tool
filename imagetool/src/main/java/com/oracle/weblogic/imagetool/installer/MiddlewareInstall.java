@@ -1,4 +1,4 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.installer;
@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.zip.ZipEntry;
@@ -17,41 +18,41 @@ import com.oracle.weblogic.imagetool.api.model.CachedFile;
 import com.oracle.weblogic.imagetool.cachestore.CacheStore;
 import com.oracle.weblogic.imagetool.logging.LoggingFacade;
 import com.oracle.weblogic.imagetool.logging.LoggingFactory;
+import com.oracle.weblogic.imagetool.util.Architecture;
 import com.oracle.weblogic.imagetool.util.Utils;
 
 public class MiddlewareInstall {
 
     private static final LoggingFacade logger = LoggingFactory.getLogger(MiddlewareInstall.class);
 
-    private List<MiddlewareInstallPackage> installerFiles = new ArrayList<>();
-    private FmwInstallerType fmwInstallerType;
+    private final List<MiddlewareInstallPackage> installerFiles = new ArrayList<>();
+    private final FmwInstallerType fmwInstallerType;
 
     /**
      * Get the install metadata for a given middleware install type.
      * @param type the requested middleware install type
      */
-    public MiddlewareInstall(FmwInstallerType type, String version, List<Path> responseFiles)
-        throws FileNotFoundException {
-
-        logger.info("IMG-0039", type.installerListString(), version);
+    public MiddlewareInstall(FmwInstallerType type, String version, List<Path> responseFiles,
+                             Architecture target) throws FileNotFoundException {
+        logger.info("IMG-0039", type.installerListString(version), version);
         fmwInstallerType = type;
 
-        for (InstallerType installer : type.installerList()) {
+        for (InstallerType installer : type.installerList(version)) {
             MiddlewareInstallPackage pkg = new MiddlewareInstallPackage();
             pkg.type = installer;
-            pkg.installer = new CachedFile(installer, version);
+            pkg.installer = new CachedFile(installer, version, target);
             pkg.responseFile = new DefaultResponseFile(installer, type);
+            if (installer.equals(InstallerType.DB19)) {
+                pkg.preinstallCommands = Collections.singletonList("34761383/changePerm.sh /u01/oracle");
+            }
             addInstaller(pkg);
         }
-        setResponseFiles(responseFiles);
+        setResponseFiles(responseFiles, version);
     }
 
     private static String getJarNameFromInstaller(Path installerFile) throws IOException {
         String filename = installerFile.getFileName().toString();
         logger.entering(filename);
-        if (filename == null) {
-            return null;
-        }
 
         if (filename.endsWith(".zip")) {
             logger.finer("locating installer JAR inside installer ZIP");
@@ -95,11 +96,11 @@ public class MiddlewareInstall {
         return installerFiles;
     }
 
-    private boolean addInstaller(MiddlewareInstallPackage installPackage) {
-        return installerFiles.add(installPackage);
+    private void addInstaller(MiddlewareInstallPackage installPackage) {
+        installerFiles.add(installPackage);
     }
 
-    private void setResponseFiles(List<Path> responseFiles) throws FileNotFoundException {
+    private void setResponseFiles(List<Path> responseFiles, String version) throws FileNotFoundException {
         if (responseFiles == null || responseFiles.isEmpty()) {
             return;
         }
@@ -109,7 +110,7 @@ public class MiddlewareInstall {
         if (responseFiles.size() != installerFiles.size()) {
             throw new IllegalArgumentException(
                 Utils.getMessage("IMG-0040",
-                    fmwInstallerType.installerListString(),
+                    fmwInstallerType.installerListString(version),
                     responseFiles.size(),
                     installerFiles.size()));
         }

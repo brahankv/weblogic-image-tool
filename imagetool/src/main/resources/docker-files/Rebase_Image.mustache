@@ -1,10 +1,12 @@
-# Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 # Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 #
 
 {{#isRebaseToTarget}}
 FROM {{sourceImage}} as source_image
 FROM {{targetImage}} as final_build
+{{#buildArgs}}ARG {{{.}}}
+{{/buildArgs}}
 
 ENV DOMAIN_HOME={{{domain_home}}}
 LABEL com.oracle.weblogic.imagetool.buildid="{{buildId}}"
@@ -18,6 +20,9 @@ LABEL com.oracle.weblogic.imagetool.buildid="{{buildId}}"
 
     LABEL com.oracle.weblogic.imagetool.buildid="{{buildId}}"
     USER root
+    {{#initialBuildCommands}}
+        {{{.}}}
+    {{/initialBuildCommands}}
     # Use package manager to make sure that unzip, tar, and other required packages are installed
     {{> package-managers}}
 
@@ -35,12 +40,14 @@ LABEL com.oracle.weblogic.imagetool.buildid="{{buildId}}"
     {{/installMiddleware}}
 
     FROM os_update as final_build
-
+    {{#buildArgs}}ARG {{{.}}}
+    {{/buildArgs}}
     ENV ORACLE_HOME={{{oracle_home}}} \
+        LD_LIBRARY_PATH={{{oracle_home}}}/oracle_common/adr:$LD_LIBRARY_PATH \
     {{#installJava}}
         JAVA_HOME={{{java_home}}} \
     {{/installJava}}
-    PATH=${PATH}:{{{java_home}}}/bin:{{{oracle_home}}}/oracle_common/common/bin:{{{oracle_home}}}/wlserver/common/bin:{{{oracle_home}}}
+        PATH=${PATH}:{{{java_home}}}/bin:{{{oracle_home}}}/oracle_common/common/bin:{{{oracle_home}}}/wlserver/common/bin:{{{oracle_home}}}
 
     LABEL com.oracle.weblogic.imagetool.buildid="{{buildId}}"
 
@@ -72,9 +79,9 @@ RUN mkdir -p {{domain_home}}
     {{/isWdtModelHomeOutsideWdtHome}}
 {{/modelOnly}}
 
-{{#domainGroupAsUser}}
-    RUN chmod g=u {{{domain_home}}}
-{{/domainGroupAsUser}}
+{{#useOwnerPermsForGroup}}
+    RUN chmod -R g=u {{{domain_home}}}
+{{/useOwnerPermsForGroup}}
 
 WORKDIR {{{work_dir}}}
 

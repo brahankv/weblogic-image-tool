@@ -1,4 +1,4 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.util;
@@ -7,12 +7,14 @@ import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.StringJoiner;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import com.oracle.weblogic.imagetool.aru.AruPatch;
 import com.oracle.weblogic.imagetool.cli.menu.PackageManagerType;
@@ -34,6 +36,11 @@ public class DockerfileOptions {
     private static final String DEFAULT_DOMAIN_HOME = "/u01/domains/base_domain";
     // Default location for the oraInst.loc
     private static final String DEFAULT_INV_LOC = "/u01/oracle";
+
+    private static final List<String> DEFAULT_OS_PACKAGES = Arrays.asList(
+        "gzip", "tar", "unzip", "libaio", "libnsl", "jq", "findutils", "diffutils");
+    private static final List<String> BINARY_OS_PACKAGES = Arrays.asList("binutils", "make", "glibc-devel");
+    private static final String WLSIMG_OS_PACKAGES = System.getenv("WLSIMG_OS_PACKAGES");
 
     private static final String DEFAULT_ORAINV_DIR = "/u01/oracle/oraInventory";
 
@@ -64,8 +71,10 @@ public class DockerfileOptions {
     private PackageManagerType pkgMgr;
     private List<String> patchFilenames;
     private MiddlewareInstall mwInstallers;
-    private boolean domainGroupAsUser;
+    private boolean useOwnerPermsForGroup;
     private boolean usingBusybox;
+    private boolean includeBinaryOsPackages;
+    private List<String> buildArgs;
 
     // WDT values
     private String wdtHome;
@@ -95,8 +104,10 @@ public class DockerfileOptions {
         updateOpatch = false;
         skipJavaInstall = false;
         skipMiddlewareInstall = false;
-        domainGroupAsUser = false;
+        useOwnerPermsForGroup = false;
         usingBusybox = false;
+        includeBinaryOsPackages = false;
+        buildArgs = new ArrayList<>();
 
         javaHome = DEFAULT_JAVA_HOME;
         oracleHome = DEFAULT_ORACLE_HOME;
@@ -299,7 +310,7 @@ public class DockerfileOptions {
                 pkgMgr = PackageManagerType.NONE;
             } else {
                 // This default must match the Package Manager for the configured fromImage default in baseImageName
-                pkgMgr = PackageManagerType.MICRODNF;
+                pkgMgr = PackageManagerType.MICRODNF_8;
             }
         } else {
             pkgMgr = option;
@@ -315,6 +326,11 @@ public class DockerfileOptions {
     @SuppressWarnings("unused")
     public boolean useMicroDnf() {
         return pkgMgr == PackageManagerType.MICRODNF;
+    }
+
+    @SuppressWarnings("unused")
+    public boolean useMicroDnf8() {
+        return pkgMgr == PackageManagerType.MICRODNF_8;
     }
 
     @SuppressWarnings("unused")
@@ -958,13 +974,13 @@ public class DockerfileOptions {
     }
 
     /**
-     * Referenced by Dockerfile template, provides additional OS packages supplied by the user.
+     * Referenced by Dockerfile template, provides additional build commands supplied by the user.
      *
      * @return list of commands as Strings.
      */
     @SuppressWarnings("unused")
-    public List<String> osPackages() {
-        return getAdditionalCommandsForSection(AdditionalBuildCommands.PACKAGES);
+    public List<String> initialBuildCommands() {
+        return getAdditionalCommandsForSection(AdditionalBuildCommands.INITIAL_BLD);
     }
 
     /**
@@ -1074,14 +1090,44 @@ public class DockerfileOptions {
         return this;
     }
 
-    public DockerfileOptions setDomainGroupAsUser(boolean value) {
-        domainGroupAsUser = value;
+    /**
+     * Let the Dockerfile know that additional write permissions are required.
+     * When running in OpenShift, 755 permissions is inadequate for some tools
+     * and write permissions must be enabled.  For example, OPatch will fail
+     * with code 73 if it does not have write permissions to the cfgtoollogs folder.
+     * @param value true if additional group write permissions are required.
+     * @return this
+     */
+    public DockerfileOptions useOwnerPermsForGroup(boolean value) {
+        useOwnerPermsForGroup = value;
         return this;
     }
 
+    /**
+     * Returns true if additional write permissions should be used for the OS group.
+     * @return true if group should equal owner permissions for some files/dirs.
+     */
     @SuppressWarnings("unused")
-    public boolean domainGroupAsUser() {
-        return domainGroupAsUser;
+    public boolean useOwnerPermsForGroup() {
+        return useOwnerPermsForGroup;
+    }
+
+    /**
+     * Include OS packages for binary patching such as make for OPatch.
+     * @param value true if additional OS patches for binary patching should be added to the image.
+     * @return this
+     */
+    public DockerfileOptions includeBinaryOsPackages(boolean value) {
+        includeBinaryOsPackages = value;
+        return this;
+    }
+
+    /**
+     * Returns true if additional OS patches for binary patching should be added to the image.
+     * @return true if additional OS patches for binary patching should be added to the image, false otherwise.
+     */
+    public boolean includeBinaryOsPackages() {
+        return includeBinaryOsPackages;
     }
 
     /**
@@ -1103,5 +1149,48 @@ public class DockerfileOptions {
     public DockerfileOptions usingBusybox(boolean value) {
         usingBusybox = value;
         return this;
+    }
+
+    /**
+     * Used by mustache template to retrieve variable names for ARG in Dockerfile.
+     * @return list of variable names
+     */
+    @SuppressWarnings("unused")
+    public List<String> buildArgs() {
+        return buildArgs;
+    }
+
+    /**
+     * Add ARG statements to the Dockerfile.
+     * @param variableName an ARG name.
+     * @return this
+     */
+    public DockerfileOptions buildArgs(String variableName) {
+        buildArgs.add(variableName);
+        return this;
+    }
+
+    /**
+     * Referenced by Dockerfile template, provides a list of packages that the package manager,
+     * like YUM, should install.
+     * @return a list of package names.
+     */
+    @SuppressWarnings("unused")
+    public List<String> osPackages() {
+        List<String> result = new ArrayList<>(32);
+        if (Utils.isEmptyString(WLSIMG_OS_PACKAGES)) {
+            // If the user did not provide a list of OS packages, use the default list
+            result.addAll(DEFAULT_OS_PACKAGES);
+            if (includeBinaryOsPackages()) {
+                result.addAll(BINARY_OS_PACKAGES);
+            }
+        } else {
+            // When provided in the environment variable, use the list of OS packages provided by the user.
+            result.addAll(Stream.of(WLSIMG_OS_PACKAGES.split(" ")).collect(Collectors.toList()));
+        }
+
+        result.addAll(getAdditionalCommandsForSection(AdditionalBuildCommands.PACKAGES));
+
+        return result;
     }
 }

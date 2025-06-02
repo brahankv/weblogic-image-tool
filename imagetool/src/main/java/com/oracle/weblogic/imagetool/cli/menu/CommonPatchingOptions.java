@@ -22,7 +22,6 @@ import com.oracle.weblogic.imagetool.aru.AruUtil;
 import com.oracle.weblogic.imagetool.aru.InstalledPatch;
 import com.oracle.weblogic.imagetool.aru.InvalidCredentialException;
 import com.oracle.weblogic.imagetool.aru.InvalidPatchNumberException;
-import com.oracle.weblogic.imagetool.aru.MultiplePatchVersionsException;
 import com.oracle.weblogic.imagetool.cachestore.OPatchFile;
 import com.oracle.weblogic.imagetool.cachestore.PatchFile;
 import com.oracle.weblogic.imagetool.installer.FmwInstallerType;
@@ -58,12 +57,14 @@ public abstract class CommonPatchingOptions extends CommonOptions {
         super.initializeOptions();
         password = Utils.getPasswordFromInputs(passwordStr, passwordFile, passwordEnv);
 
-        // if userid or password is provided, validate the pair of provided values
-        if ((userId != null || password != null) && !AruUtil.rest().checkCredentials(userId, password)) {
-            throw new InvalidCredentialException();
-        }
+        if (applyingPatches()) {
+            // if userid or password is provided, validate the pair of provided values
+            if ((userId != null || password != null) && !AruUtil.rest().checkCredentials(userId, password)) {
+                throw new InvalidCredentialException();
+            }
 
-        Utils.validatePatchIds(patches, false);
+            Utils.validatePatchIds(patches, true);
+        }
     }
 
     /**
@@ -136,56 +137,14 @@ public abstract class CommonPatchingOptions extends CommonOptions {
             logger.exiting("not applying patches");
             return;
         }
-        String psuVersion = InstalledPatch.getPsuVersion(installedPatches);
 
+        // if the user requested latestPSU or recommendedPatches, start with that patch list
         List<AruPatch> aruPatches = getRecommendedPatchList();
-
-        if (!aruPatches.isEmpty()) {
-            // when applying a new PSU, use that PSU version to find patches where user did not qualify the patch number
-            for (AruPatch patch : aruPatches) {
-                if (patch.isPsu() && AruProduct.fromProductId(patch.product()) == AruProduct.WLS) {
-                    String psuName = patch.psuBundle();
-                    String psu = psuName.substring(psuName.lastIndexOf(' ') + 1);
-                    logger.fine("Using PSU {0} to set preferred patch version to {1}", patch.patchId(), psu);
-                    psuVersion = psu;
-                }
-            }
-        }
-
+        String psuVersion = findPsuVersion(aruPatches, InstalledPatch.getPsuVersion(installedPatches));
         // add user-provided patch list to any patches that were found for latestPsu or recommendedPatches
-        for (String patchId : patches) {
-            // if user mistakenly added the OPatch patch to the WLS patch list, skip it. WIT updates OPatch anyway
-            if (OPatchFile.isOPatchPatch(patchId)) {
-                continue;
-            }
-            // if patch ID was provided as bugnumber_version, split the bugnumber and version strings
-            String providedVersion = null;
-            int split = patchId.indexOf('_');
-            if (split > 0) {
-                providedVersion = patchId.substring(split + 1);
-                patchId = patchId.substring(0, split);
-            }
-            List<AruPatch> patchVersions = AruUtil.rest().getPatches(patchId, userId, password);
+        aruPatches.addAll(resolveUserRequestedPatches(psuVersion));
 
-            // Stack Patch Bundle (SPB) is not a traditional patch.  Patches in SPB are duplicates of recommended.
-            if (patchVersions.stream().anyMatch(AruPatch::isStackPatchBundle)) {
-                // Do not continue if the user specified a patch number that cannot be applied.
-                throw logger.throwing(new InvalidPatchNumberException(Utils.getMessage("IMG-0098", patchId)));
-            }
-
-            if (!patchVersions.isEmpty()) {
-                AruPatch selectedVersion = AruPatch.selectPatch(patchVersions, providedVersion, psuVersion,
-                    getInstallerVersion());
-
-                if (selectedVersion != null) {
-                    aruPatches.add(selectedVersion);
-                } else {
-                    throw logger.throwing(new MultiplePatchVersionsException(patchId, aruPatches));
-                }
-            }
-        }
-
-        AruUtil.validatePatches(installedPatches, aruPatches, userId, password);
+        AruUtil.rest().validatePatches(installedPatches, aruPatches, userId, password);
 
         String patchesFolderName = createPatchesTempDirectory().toAbsolutePath().toString();
         // copy the patch JARs to the Docker build context directory from the local cache, downloading them if needed
@@ -215,6 +174,85 @@ public abstract class CommonPatchingOptions extends CommonOptions {
         logger.exiting();
     }
 
+    String findPsuVersion(List<AruPatch> aruPatches, String defaultValue) {
+        logger.entering(aruPatches, defaultValue);
+        // when applying a new PSU, use that PSU version to find patches where user did not qualify the patch number
+        for (AruPatch patch : aruPatches) {
+            String psuVersion = findPsuVersion(patch);
+            if (psuVersion != null) {
+                return psuVersion;
+            }
+        }
+        logger.exiting(defaultValue);
+        return defaultValue;
+    }
+
+    String findPsuVersion(AruPatch aruPatch) {
+        if (aruPatch != null && aruPatch.isPsu() && AruProduct.fromProductId(aruPatch.product()) == AruProduct.WLS) {
+            String psu = aruPatch.psuVersion();
+            logger.fine("Using PSU {0} to set preferred patch version to {1}", aruPatch.patchId(), psu);
+            return psu;
+        }
+        return null;
+    }
+
+    /**
+     * Resolve user-provided patch list from ARU.
+     * Discard any OPatch or SPB patches found in the user provided list.
+     * Error out if any SPB patches found in the user provided list.
+     *
+     * @param psuVersion the PSU version from the target image or recommended patch list to select correct patch
+     * @return user requested patches as a list of AruPatch
+     * @throws InvalidPatchNumberException if user specified an Stack Patch Bundle on the command line
+     * @throws XPathExpressionException when unable to parse patch list returned from ARU
+     * @throws IOException when having network issues with ARU
+     * @throws AruException when retries are exhausted trying to reach ARU
+     */
+    List<AruPatch> resolveUserRequestedPatches(String psuVersion)
+        throws XPathExpressionException, IOException, AruException {
+
+        logger.entering(psuVersion);
+        List<AruPatch> result = new ArrayList<>(patches.size());
+        // if the user specified the PSU as a normal bug number in the list of --patches, use that
+        String effectivePsuVersion = psuVersion;
+        for (String patchId : patches) {
+            // if user mistakenly added the OPatch patch to the WLS patch list, skip it. WIT updates OPatch anyway
+            if (OPatchFile.isOPatchPatch(patchId)) {
+                continue;
+            }
+            // if patch ID was provided as bugnumber_version, split the bugnumber and version strings
+            String providedVersion = null;
+            int split = patchId.indexOf('_');
+            if (split > 0) {
+                providedVersion = patchId.substring(split + 1);
+                patchId = patchId.substring(0, split);
+            }
+            List<AruPatch> patchVersions = AruUtil.rest().getPatches(patchId, userId, password)
+                .filter(p -> p.isApplicableToTarget(getTargetArchitecture().getAruPlatform()))
+                .collect(Collectors.toList());
+
+            // Stack Patch Bundle (SPB) is not a traditional patch.  Patches in SPB are duplicates of recommended.
+            if (patchVersions.stream().anyMatch(AruPatch::isStackPatchBundle)) {
+                // Do not continue if the user specified a patch number that cannot be applied.
+                throw logger.throwing(new InvalidPatchNumberException(Utils.getMessage("IMG-0098", patchId)));
+            }
+
+            if (!patchVersions.isEmpty()) {
+                // if ARU found patches for the provided bug number, try to select the one the user needs by version
+                AruPatch selectedVersion = AruPatch.selectPatch(patchVersions, providedVersion, effectivePsuVersion,
+                    getInstallerVersion());
+
+                String psuVersionOfSelected = findPsuVersion(selectedVersion);
+                if (Utils.isEmptyString(psuVersion) && !Utils.isEmptyString(psuVersionOfSelected)) {
+                    effectivePsuVersion = psuVersionOfSelected;
+                }
+                result.add(selectedVersion);
+            }
+        }
+        logger.exiting(result);
+        return result;
+    }
+
     /**
      * Get all the latest PSU patches for a given installer type (WLS, SOA, etc.) if the user
      * requested them with --latestPSU.  --recommendedPatches takes precedence over --latestPSU, and
@@ -237,7 +275,8 @@ public abstract class CommonPatchingOptions extends CommonOptions {
         if (recommendedPatches) {
             // Get the latest PSU and its recommended patches
             aruPatches = AruUtil.rest()
-                .getRecommendedPatches(getInstallerType(), getInstallerVersion(), userId, password);
+                .getRecommendedPatches(getInstallerType(), getInstallerVersion(), getTargetArchitecture(),
+                    userId, password);
 
             if (aruPatches.isEmpty()) {
                 recommendedPatches = false;
@@ -253,7 +292,8 @@ public abstract class CommonPatchingOptions extends CommonOptions {
             }
         } else if (latestPsu) {
             // PSUs for WLS and JRF installers are considered WLS patches
-            aruPatches = AruUtil.rest().getLatestPsu(getInstallerType(), getInstallerVersion(), userId, password);
+            aruPatches = AruUtil.rest().getLatestPsu(getInstallerType(), getInstallerVersion(), getTargetArchitecture(),
+                userId, password);
 
             if (aruPatches.isEmpty()) {
                 latestPsu = false;

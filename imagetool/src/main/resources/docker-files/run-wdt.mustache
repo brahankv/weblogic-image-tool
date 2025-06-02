@@ -1,9 +1,11 @@
-# Copyright (c) 2021, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
 # Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 #
 # Create WLS domain (or model)
 
 FROM {{{wdtBase}}} as wdt_build
+{{#buildArgs}}ARG {{{.}}}
+{{/buildArgs}}
 LABEL com.oracle.weblogic.imagetool.buildid="{{buildId}}"
 
 ENV WLSDEPLOY_PROPERTIES="{{{wlsdeploy_properties}}} -Djava.security.egd=file:/dev/./urandom" \
@@ -23,15 +25,15 @@ RUN cd {{{wdt_home}}} \
 && mkdir -p $(dirname {{{domain_home}}})
 
 {{#wdtModels}}
-    COPY --chown={{userid}}:{{groupid}} {{{.}}} {{{wdt_model_home}}}/
+    COPY --chown={{userid}}:{{groupid}} ["{{{.}}}", "{{{wdt_model_home}}}/"]
 {{/wdtModels}}
 
 {{#wdtArchives}}
-    COPY --chown={{userid}}:{{groupid}} {{{.}}} {{{wdt_model_home}}}/
+    COPY --chown={{userid}}:{{groupid}} ["{{{.}}}", "{{{wdt_model_home}}}/"]
 {{/wdtArchives}}
 
 {{#wdtVariables}}
-    COPY --chown={{userid}}:{{groupid}} {{{.}}} {{{wdt_model_home}}}/
+    COPY --chown={{userid}}:{{groupid}} ["{{{.}}}", "{{{wdt_model_home}}}/"]
 {{/wdtVariables}}
 
 RUN test -d {{{wdt_home}}}/weblogic-deploy && rm -rf {{{wdt_home}}}/weblogic-deploy || echo Initial WDT install \
@@ -59,21 +61,23 @@ RUN test -d {{{wdt_home}}}/weblogic-deploy && rm -rf {{{wdt_home}}}/weblogic-dep
         -run_rcu \
     {{/runRcu}}
     {{{wdtVariableFileArgument}}} {{{wdtModelFileArgument}}} {{{wdtArchiveFileArgument}}}
-    {{#domainGroupAsUser}}
+    {{#useOwnerPermsForGroup}}
         RUN chmod -R g=u {{{domain_home}}}
-    {{/domainGroupAsUser}}
+    {{/useOwnerPermsForGroup}}
 {{/modelOnly}}
 {{#isWdtValidateEnabled}}
     RUN cd {{{wdt_home}}}/weblogic-deploy/bin \
     && rm ./*.cmd \
-    {{#domainGroupAsUser}}
+    {{#useOwnerPermsForGroup}}
         && chmod -R g=u {{{wdt_home}}}/weblogic-deploy/lib \
-    {{/domainGroupAsUser}}
+        && mkdir {{{wdt_home}}}/weblogic-deploy/logs \
+        && chmod g=u {{{wdt_home}}}/weblogic-deploy/logs \
+    {{/useOwnerPermsForGroup}}
     && ./validateModel.sh {{^strictValidation}}-method lax{{/strictValidation}} \
     -oracle_home {{{oracle_home}}} \
     -domain_type {{domainType}} \
     {{{wdtVariableFileArgument}}} {{{wdtModelFileArgument}}} {{{wdtArchiveFileArgument}}} \
-    && rm -rf {{{wdt_home}}}/weblogic-deploy/logs \
+    && rm {{{wdt_home}}}/weblogic-deploy/logs/* \
     && shopt -s globstar && rm -f {{{wdt_home}}}/weblogic-deploy/lib/python/**/*.class
 {{/isWdtValidateEnabled}}
 

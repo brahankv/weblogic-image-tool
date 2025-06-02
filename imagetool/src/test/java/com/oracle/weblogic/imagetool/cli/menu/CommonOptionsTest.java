@@ -1,4 +1,4 @@
-// Copyright (c) 2020, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2020, 2024, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.cli.menu;
@@ -20,6 +20,7 @@ import java.util.stream.Stream;
 import com.oracle.weblogic.imagetool.api.model.CachedFile;
 import com.oracle.weblogic.imagetool.logging.LoggingFacade;
 import com.oracle.weblogic.imagetool.logging.LoggingFactory;
+import com.oracle.weblogic.imagetool.test.annotations.ReduceTestLogging;
 import com.oracle.weblogic.imagetool.util.DockerfileOptions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+@ReduceTestLogging(loggerClass = CommonOptions.class)
 @Tag("unit")
 class CommonOptionsTest {
     private static void setPrivateField(String fieldname, Object target, Object value)
@@ -44,6 +46,7 @@ class CommonOptionsTest {
     /**
      * handleChown() should set the Dockerfile userid and groupid.
      * use case: user provides derek:data.  Result should be "derek" for user and "data" for group.
+     *
      * @throws Exception if reflection fails (developer error)
      */
     @Test
@@ -66,6 +69,7 @@ class CommonOptionsTest {
     /**
      * handleChown() should set the Dockerfile userid and groupid.
      * use case: default, no input.  Result should be "oracle" for both.
+     *
      * @throws Exception if reflection fails (developer error)
      */
     @Test
@@ -87,6 +91,7 @@ class CommonOptionsTest {
 
     /**
      * Test CommonOptions handleChown method.
+     *
      * @throws Exception if reflection fails (developer error)
      */
     @Test
@@ -172,7 +177,7 @@ class CommonOptionsTest {
         resourceTemplatesField.setAccessible(true);
         List<Path> resolveFiles =
             Arrays.asList(new File("target/test-classes/templates/resolver.yml").toPath(),
-            new File("target/test-classes/templates/verrazzano.yml").toPath());
+                new File("target/test-classes/templates/verrazzano.yml").toPath());
         resourceTemplatesField.set(wdtOptions, resolveFiles);
 
         Field imageTagField = WdtFullOptions.class.getDeclaredField("wdtDomainHome");
@@ -223,5 +228,20 @@ class CommonOptionsTest {
         CreateImage createImage = new CreateImage();
         new CommandLine(createImage).parseArgs("--tag", "x:1");
         assertFalse(createImage.isChownSet());
+    }
+
+    @Test
+    void buildArgs() throws Exception {
+        CreateImage createImage = new CreateImage();
+        new CommandLine(createImage).parseArgs("--tag", "tag:1",
+            "--build-arg", "something=else", "--build-arg", "fast=break");
+
+        createImage.initializeOptions();
+        // access the private field to view the dockerfile options that will be used at runtime
+        Field options = CommonOptions.class.getDeclaredField("dockerfileOptions");
+        options.setAccessible(true);
+        DockerfileOptions dockerfile = (DockerfileOptions) options.get(createImage);
+        assertEquals(2, dockerfile.buildArgs().size());
+        assertEquals("something", dockerfile.buildArgs().get(0));
     }
 }

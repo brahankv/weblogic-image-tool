@@ -12,7 +12,7 @@
     <parent>
         <artifactId>imagetool-parent</artifactId>
         <groupId>com.oracle.weblogic.lifecycle.imagetool</groupId>
-        <version>1.11.2-SNAPSHOT</version>
+        <version>1.15.1-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -84,14 +84,14 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
-                    <encoding>UTF-8</encoding>
                     <failIfNoTests>false</failIfNoTests>
                     <argLine>-Xmx1024m -XX:MaxPermSize=256m</argLine>
                     <systemPropertyVariables>
                         <WLSIMG_BLDDIR>${project.build.directory}/blddir</WLSIMG_BLDDIR>
                         <WLSIMG_CACHEDIR>${project.build.directory}/cachedir</WLSIMG_CACHEDIR>
                         <STAGING_DIR>${test.staging.dir}</STAGING_DIR>
-                        <DB_IMAGE>phx.ocir.io/weblogick8s/database/enterprise:12.2.0.1-slim</DB_IMAGE>
+                        <DB_IMAGE>${test.db.image}</DB_IMAGE>
+                        <JRE_IMAGE>${test.java.image}</JRE_IMAGE>
                     </systemPropertyVariables>
                 </configuration>
                 <executions>

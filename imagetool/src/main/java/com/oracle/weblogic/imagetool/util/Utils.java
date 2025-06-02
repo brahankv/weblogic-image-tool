@@ -1,4 +1,4 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.util;
@@ -30,6 +30,8 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.ResourceBundle;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -41,6 +43,7 @@ import com.github.mustachejava.MustacheFactory;
 import com.oracle.weblogic.imagetool.logging.LoggingFacade;
 import com.oracle.weblogic.imagetool.logging.LoggingFactory;
 import org.jetbrains.annotations.NonNls;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.PropertyKey;
 
 public class Utils {
@@ -86,7 +89,7 @@ public class Utils {
         Objects.requireNonNull(sourcePath);
         Objects.requireNonNull(destPath);
         logger.fine("copyLocalFile: copying file {0}->{1}", sourcePath, destPath);
-        Files.copy(sourcePath, destPath, StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(sourcePath, destPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
     }
 
     /**
@@ -116,7 +119,7 @@ public class Utils {
                 } else if (Files.isRegularFile(child)) {
                     copyLocalFile(child, destPath.resolve(child.getFileName()));
                 } else {
-                    logger.info("IMG-0035", sourcePath.toString());
+                    logger.info("IMG-0035", child.toString());
                 }
             }
         }
@@ -282,18 +285,44 @@ public class Utils {
      * @throws IOException in case of error
      */
     public static void deleteFilesRecursively(String pathDir) throws IOException {
-        if (pathDir != null) {
-            Path tmpDir = Paths.get(pathDir);
-            try (Stream<Path> walk = Files.walk(tmpDir)) {
-                walk.sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    //.peek(System.out::println)
-                    .forEach(File::delete);
-            }
+        logger.entering(pathDir);
+        if (pathDir == null) {
+            logger.exiting();
+            return;
+        }
 
-            if (Files.exists(tmpDir)) {
-                logger.warning("IMG-0038", tmpDir);
-            }
+        Path tmpDir = Paths.get(pathDir);
+        try (Stream<Path> walk = Files.walk(tmpDir)) {
+            walk.sorted(Comparator.reverseOrder())
+                .map(Path::toFile)
+                //.peek(System.out::println)
+                .forEach(File::delete);
+        }
+
+        if (Files.exists(tmpDir)) {
+            logger.warning("IMG-0038", tmpDir);
+        }
+        logger.exiting();
+    }
+
+    /**
+     * Compares two version strings.  A null-friendly comparator that considers null to be less than non-null.
+     * Any qualifiers are treated as older than the same version without
+     * a qualifier.  If both versions have qualifiers and are otherwise equal, they are compared using
+     * String.compareTo() to determine the result.
+     *
+     * @param thisVersion  - first version
+     * @param otherVersion  - second version
+     * @return returns 0 if the versions are equal, greater than zero if thisVersion is newer,
+     *     and less than zero if thisVersion is older.
+     */
+    public static int compareVersionsNullsFirst(String thisVersion, String otherVersion) {
+        if (isEmptyString(thisVersion)) {
+            return (isEmptyString(otherVersion)) ? 0 : -1;
+        } else if (isEmptyString(otherVersion)) {
+            return 1;
+        } else {
+            return compareVersions(thisVersion, otherVersion);
         }
     }
 
@@ -308,8 +337,6 @@ public class Utils {
      *     and less than zero if thisVersion is older.
      */
     public static int compareVersions(String thisVersion, String otherVersion) {
-        int result = 0;
-
         if (isEmptyString(thisVersion) || isEmptyString(otherVersion)) {
             throw new IllegalArgumentException("cannot compare null strings");
         }
@@ -324,24 +351,22 @@ public class Utils {
 
         int fieldsToCompare = Math.min(thisVersionElements.length, otherVersionElements.length);
 
+        int result = 0;
         int idx;
         for (idx = 0; idx < fieldsToCompare; idx++) {
             int thisVersionNumber = Integer.parseInt(thisVersionElements[idx]);
             int otherVersionNumber = Integer.parseInt(otherVersionElements[idx]);
 
-            if (thisVersionNumber > otherVersionNumber) {
-                result = 1;
-                break;
-            } else if (thisVersionNumber < otherVersionNumber) {
-                result = -1;
-                break;
+            result = Integer.compare(thisVersionNumber, otherVersionNumber);
+            if (result != 0) {
+                return result;
             }
         }
 
         // Version fields compared so far are equal so check to see if one version number
         // has more fields than the other.
         //
-        if (result == 0 && thisVersionElements.length != otherVersionElements.length) {
+        if (thisVersionElements.length != otherVersionElements.length) {
             if (thisVersionElements.length > otherVersionElements.length) {
                 result = 1;
             } else {
@@ -349,36 +374,37 @@ public class Utils {
             }
         }
 
+        if (result != 0) {
+            return result;
+        }
+
         // Finally, look to see if one or both versions have a qualifier if they are otherwise the same.
         //
-        if (result == 0) {
-            int useCase = 0;
-            if (thisVersion.indexOf('-') != -1) {
-                useCase += 1;
-            }
-            if (otherVersion.indexOf('-') != -1) {
-                useCase += 2;
-            }
-            switch (useCase) {
-                case 0:
-                    break;
+        int useCase = 0;
+        if (thisVersion.indexOf('-') != -1) {
+            useCase += 1;
+        }
+        if (otherVersion.indexOf('-') != -1) {
+            useCase += 2;
+        }
+        switch (useCase) {
+            case 1:
+                result = -1;
+                break;
 
-                case 1:
-                    result = -1;
-                    break;
+            case 2:
+                result = 1;
+                break;
 
-                case 2:
-                    result = 1;
-                    break;
+            case 3:
+                String thisQualifier = thisVersion.substring(thisVersion.indexOf('-'));
+                String otherQualifier = otherVersion.substring(otherVersion.indexOf('-'));
+                result = thisQualifier.compareTo(otherQualifier);
+                break;
 
-                case 3:
-                    String thisQualifier = thisVersion.substring(thisVersion.indexOf('-'));
-                    String otherQualifier = otherVersion.substring(otherVersion.indexOf('-'));
-                    result = thisQualifier.compareTo(otherQualifier);
-                    break;
-                default:
-                    break;
-            }
+            case 0:
+            default:
+                break;
         }
         return result;
     }
@@ -521,13 +547,13 @@ public class Utils {
      * @param defaultValue if no environment variable is defined, nor system property, return this value
      * @return the value defined in the env or system property
      */
-    public static String getEnvironmentProperty(String name, String defaultValue) {
+    public static String getEnvironmentProperty(String name, Supplier<String> defaultValue) {
         String result = System.getenv(name);
         if (isEmptyString(result)) {
             result = System.getProperty(name);
         }
         if (isEmptyString(result)) {
-            return defaultValue;
+            return defaultValue.get();
         }
         return result;
     }
@@ -538,7 +564,7 @@ public class Utils {
      * @return working directory
      */
     public static String getBuildWorkingDir() throws IOException {
-        String workingDir = getEnvironmentProperty("WLSIMG_BLDDIR", System.getProperty("user.home"));
+        String workingDir = getEnvironmentProperty("WLSIMG_BLDDIR", () -> System.getProperty("user.home"));
         Path path = Paths.get(workingDir);
 
         boolean pathExists = Files.exists(path, LinkOption.NOFOLLOW_LINKS);
@@ -557,38 +583,36 @@ public class Utils {
         return workingDir;
     }
 
-    /**
-     * validatePatchIds validate the format of the patch ids.
-     *
-     * @param patches list of patch ids
-     * @return true if all patch IDs are valid , false otherwise.
-     */
-
-    public static boolean validatePatchIds(List<String> patches, boolean rigid) throws InvalidPatchIdFormatException {
-        Pattern patchIdPattern;
-        if (rigid) {
-            patchIdPattern = Pattern.compile(Constants.RIGID_PATCH_ID_REGEX);
-        } else {
-            patchIdPattern = Pattern.compile(Constants.PATCH_ID_REGEX);
-        }
-        if (patches != null && !patches.isEmpty()) {
-            for (String patchId : patches) {
-                logger.finer("pattern matching patchId: {0}", patchId);
-                Matcher matcher = patchIdPattern.matcher(patchId);
-                if (!matcher.matches()) {
-                    String errorFormat;
-                    if (rigid) {
-                        errorFormat = "12345678_12.2.1.3.0";
-                    } else {
-                        errorFormat = "12345678[_12.2.1.3.0]";
-                    }
-
-                    throw new InvalidPatchIdFormatException(patchId, errorFormat);
-                }
+    private static void validatePatchIds(List<String> patches, Pattern pattern,
+                                            String example) throws InvalidPatchIdFormatException {
+        for (String patchId: patches) {
+            Matcher matcher = pattern.matcher(patchId);
+            if (!matcher.matches()) {
+                throw new InvalidPatchIdFormatException(patchId, example);
             }
         }
+    }
 
-        return true;
+    /**
+     * Validate the format of the patch ID.
+     * Simple ID: 12345678
+     * Full ID: {bug number}_{version}_{architecture}
+     *
+     * @param patches   List of patch IDs to validate against the required format.
+     * @param allowSimpleId Allow simple bug number without version or architecture
+     * @throws InvalidPatchIdFormatException if any of the provide patch IDs are of invalid format
+     */
+    public static void validatePatchIds(@NotNull List<String> patches,
+                                        boolean allowSimpleId) throws InvalidPatchIdFormatException {
+        if (allowSimpleId) {
+            validatePatchIds(patches,
+                Pattern.compile("^(\\d{8,9})(?:_\\d\\d(?:\\.\\d){3,8}\\.(\\d+)(_.*)?)?"),
+                "12345678[_12.2.1.3.0[_arm64]]");
+        } else {
+            validatePatchIds(patches,
+                Pattern.compile("^(\\d{8,9})_\\d\\d(?:\\.\\d){3,8}\\.(\\d+)(_.*)?"),
+                "12345678_12.2.1.3.0[_arm64]");
+        }
     }
 
     /**
@@ -737,5 +761,21 @@ public class Utils {
     @SafeVarargs
     public static <T> Set<T> toSet(T... array) {
         return toSet(Arrays.asList(array));
+    }
+
+    /**
+     * Returns a predicate for function chaining that is the negation
+     * of the supplied predicate.
+     *
+     * @param <T>     the type of argument
+     * @param target  value to negate
+     * @return negated value
+     * @throws NullPointerException if the target is null
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> Predicate<T> not(Predicate<? super T> target) {
+        //TODO: remove this method after moving to JDK 11+
+        Objects.requireNonNull(target);
+        return (Predicate<T>)target.negate();
     }
 }

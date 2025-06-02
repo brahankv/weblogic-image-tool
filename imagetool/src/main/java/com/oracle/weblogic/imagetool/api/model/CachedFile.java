@@ -1,4 +1,4 @@
-// Copyright (c) 2019, 2021, Oracle and/or its affiliates.
+// Copyright (c) 2019, 2024, Oracle and/or its affiliates.
 // Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
 
 package com.oracle.weblogic.imagetool.api.model;
@@ -9,12 +9,15 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 import com.oracle.weblogic.imagetool.cachestore.CacheStore;
 import com.oracle.weblogic.imagetool.installer.InstallerType;
 import com.oracle.weblogic.imagetool.logging.LoggingFacade;
 import com.oracle.weblogic.imagetool.logging.LoggingFactory;
+import com.oracle.weblogic.imagetool.util.Architecture;
 import com.oracle.weblogic.imagetool.util.Utils;
 
 /**
@@ -24,31 +27,45 @@ public class CachedFile {
 
     private static final LoggingFacade logger = LoggingFactory.getLogger(CachedFile.class);
 
-    private String id;
-    private String version;
+    private final String id;
+    private final String version;
+    private final Architecture architecture;
 
     /**
      * Represents a locally cached file.
      *
-     * @param id          cache ID (like installer type or patchId)
-     * @param version     version number for the patch or installer.
+     * @param id       cache ID (like installer type or patchId)
+     * @param version  version number for the patch or installer.
+     * @param target   the system architecture that this file/installer is applicable
      */
-    public CachedFile(String id, String version) {
+    public CachedFile(String id, String version, Architecture target) {
         Objects.requireNonNull(id, "key for the cached file cannot be null");
-        logger.entering(id, version);
+        logger.entering(id, version, target);
         this.id = id;
         this.version = version;
+        this.architecture = target;
         logger.exiting();
     }
 
     /**
      * Represents a locally cached file.
      *
-     * @param id          cache ID (like installer type)
-     * @param version     version number for the patch or installer.
+     * @param id       cache ID (like installer type)
+     * @param version  version number for the patch or installer.
+     * @param target   the system architecture that this file/installer is applicable
+     */
+    public CachedFile(InstallerType id, String version, Architecture target) {
+        this(id.toString(), version, target);
+    }
+
+    /**
+     * Represents a locally cached file.
+     *
+     * @param id       cache ID (like installer type)
+     * @param version  version number for the patch or installer.
      */
     public CachedFile(InstallerType id, String version) {
-        this(id.toString(), version);
+        this(id.toString(), version, null);
     }
 
     public static boolean isFileOnDisk(String filePath) {
@@ -62,11 +79,33 @@ public class CachedFile {
      * @return the key to use for this cache entry, like xxxx_yyyy.
      */
     public String getKey() {
+        if (architecture == null) {
+            return getCacheKey(null);
+        } else {
+            return getCacheKey(architecture.toString());
+        }
+    }
+
+    private String getCacheKey(String arch) {
         if (id.contains(CacheStore.CACHE_KEY_SEPARATOR)) {
             return id;
-        } else {
-            return id + CacheStore.CACHE_KEY_SEPARATOR + getVersion();
         }
+
+        StringBuilder key = new StringBuilder(32);
+        key.append(id);
+        key.append(CacheStore.CACHE_KEY_SEPARATOR);
+        key.append(version);
+        if (arch != null) {
+            key.append(CacheStore.CACHE_KEY_SEPARATOR);
+            key.append(arch);
+        }
+        return key.toString();
+    }
+
+    private List<String> getPossibleKeys(Architecture architecture) {
+        ArrayList<String> result = new ArrayList<>();
+        architecture.getAcceptableNames().forEach(name -> result.add(getCacheKey(name)));
+        return result;
     }
 
     /**
@@ -78,18 +117,50 @@ public class CachedFile {
     }
 
     /**
+     * Get the system architecture name for this cache entry/file.
+     * @return the system architecture name applicable fo this cached file.
+     */
+    public Architecture getArchitecture() {
+        return architecture;
+    }
+
+    /**
      * Get the path of the file stored locally in the cache.
+     * Searching the cache starts with the specified key.  If the key is not found in the cache,
+     * one additional attempt is made to find an acceptable alternative.  The second search is based on
+     * whether the user specified a platform/architecture.  If the user specified an architecture, check the cache
+     * for an entry listing without the architecture in the key (generic architecture entry).  If the user
+     * did not specify an architecture, check the cache for an entry listing using the local architecture
+     * in case the user added the cache entry with the architecture.
      * @param cacheStore the cache store to search
      * @return the Path of the file, if found
      * @throws IOException throws FileNotFoundException, if this cached file (key) could not be located in the cache
      */
     public String resolve(CacheStore cacheStore) throws IOException {
         // check entry exists in cache
-        String key = getKey();
-        logger.entering(key);
-        String filePath = cacheStore.getValueFromCache(key);
+        logger.entering();
+        String filePath = null;
+        List<String> keySearchOrder = new ArrayList<>();
+        if (getArchitecture() == null) {
+            // architecture was not specified, search for cache key with no arch first, then look for local arch
+            keySearchOrder.add(getCacheKey(null));
+            keySearchOrder.addAll(getPossibleKeys(Architecture.getLocalArchitecture()));
+        } else {
+            // architecture was specified, search for cache key with arch first, then look for no arch key
+            keySearchOrder.addAll(getPossibleKeys(getArchitecture()));
+            keySearchOrder.add(getCacheKey(null));
+        }
+        for (String key: keySearchOrder) {
+            logger.finer("Trying cache key {0}", key);
+            filePath = cacheStore.getValueFromCache(key);
+            if (filePath != null) {
+                logger.finer("Found cache key {0}", key);
+                break;
+            }
+        }
+
         if (!isFileOnDisk(filePath)) {
-            throw new FileNotFoundException(Utils.getMessage("IMG-0011", key));
+            throw new FileNotFoundException(Utils.getMessage("IMG-0011", getKey()));
         }
 
         logger.exiting(filePath);
@@ -103,7 +174,7 @@ public class CachedFile {
      * @return the path of the file copied to the Docker build context directory
      */
     public Path copyFile(CacheStore cacheStore, String buildContextDir) throws IOException {
-        logger.entering();
+        logger.entering(id, version, architecture, buildContextDir);
         Path result;
         String sourceFile = resolve(cacheStore);
         logger.info("IMG-0043", sourceFile);

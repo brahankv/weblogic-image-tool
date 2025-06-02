@@ -4,8 +4,8 @@ pipeline {
     }
     agent any
     tools {
-        maven 'maven-3.6.0'
-        jdk 'jdk8'
+        maven 'maven-3.8.7'
+        jdk 'jdk11'
     }
 
     triggers {
@@ -15,8 +15,9 @@ pipeline {
 
     environment {
         // variables for SystemTest stages (integration tests)
-        STAGING_DIR = "/scratch/artifacts/imagetool"
-        DB_IMAGE = "phx.ocir.io/weblogick8s/database/enterprise:12.2.0.1-slim"
+        STAGING_DIR = "${WORKSPACE}/wit-system-test-files"
+        DB_IMAGE = "${WKT_OCIR_HOST}/${WKT_TENANCY}/database/enterprise:12.2.0.1-slim"
+        JRE_IMAGE = "${WKT_OCIR_HOST}/${WKT_TENANCY}/java/serverjre:8"
     }
 
     stages {
@@ -31,7 +32,9 @@ pipeline {
         }
         stage ('Build') {
             steps {
-                sh 'mvn -B -DskipTests -DskipITs clean install'
+                withMaven(globalMavenSettingsConfig: 'wkt-maven-settings-xml', publisherStrategy: 'EXPLICIT') {
+                    sh 'mvn -B -DskipTests -DskipITs clean install'
+                }
             }
         }
         stage ('Unit Tests') {
@@ -39,7 +42,9 @@ pipeline {
                 not { changelog '\\[skip-ci\\].*' }
             }
             steps {
-                sh 'mvn test'
+                withMaven(globalMavenSettingsConfig: 'wkt-maven-settings-xml', publisherStrategy: 'EXPLICIT') {
+                    sh 'mvn -B test'
+                }
             }
             post {
                 always {
@@ -47,23 +52,39 @@ pipeline {
                 }
             }
         }
-        stage ('Sonar Analysis') {
+//        stage ('Sonar Analysis') {
+//            when {
+//                anyOf {
+//                    changeRequest()
+//                    branch "main"
+//                }
+//            }
+//            tools {
+//                maven 'maven-3.8.7'
+//                jdk 'jdk11'
+//            }
+//            steps {
+//                withSonarQubeEnv('SonarCloud') {
+//                    withCredentials([string(credentialsId: 'encj_github_token', variable: 'GITHUB_TOKEN')]) {
+//                        runSonarScanner()
+//                    }
+//                }
+//            }
+//        }
+        stage ('Download System Test Files') {
             when {
                 anyOf {
-                    changeRequest()
-                    branch "main"
+                    changeRequest target: 'main'
+                    triggeredBy 'TimerTrigger'
+                    changelog '\\[full-mats\\].*'
                 }
-            }
-            tools {
-                maven 'maven-3.6.0'
-                jdk 'jdk11'
             }
             steps {
-                withSonarQubeEnv('SonarCloud') {
-                    withCredentials([string(credentialsId: 'encj_github_token', variable: 'GITHUB_TOKEN')]) {
-                        runSonarScanner()
-                    }
-                }
+                sh '''
+                    rm -rf ${STAGING_DIR}
+                    mkdir ${STAGING_DIR}
+                    oci os object bulk-download --namespace devweblogic --bucket-name wit-system-test-files --config-file=/dev/null --auth=instance_principal --download-dir ${STAGING_DIR}
+                '''
             }
         }
         stage ('SystemTest Gate') {
@@ -75,36 +96,13 @@ pipeline {
                 }
             }
             steps {
-                withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'otn-cred', passwordVariable: 'ORACLE_SUPPORT_PASSWORD', usernameVariable: 'ORACLE_SUPPORT_USERNAME']]) {
-                    sh '''
-                        cd tests
-                        mvn clean verify -Dtest.staging.dir=${STAGING_DIR} -Dtest.groups=gate -DskipITs=false
-                    '''
-                }
-            }
-            post {
-                always {
-                    junit 'tests/target/failsafe-reports/*.xml'
-                }
-            }
-        }
-        stage ('SystemTest Full') {
-            when {
-                anyOf {
-                    triggeredBy 'TimerTrigger'
-                    tag 'release-*'
-                    changelog '\\[full-mats\\].*'
-                }
-            }
-            steps {
-                script {
-                    docker.image("${env.DB_IMAGE}").pull()
-                }
-                withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'otn-cred', passwordVariable: 'ORACLE_SUPPORT_PASSWORD', usernameVariable: 'ORACLE_SUPPORT_USERNAME']]) {
-                    sh '''
-                        cd tests
-                        mvn clean verify -Dtest.staging.dir=${STAGING_DIR} -Dtest.groups=gate,nightly -DskipITs=false
-                    '''
+                withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'wkt-otn-credential', passwordVariable: 'ORACLE_SUPPORT_PASSWORD', usernameVariable: 'ORACLE_SUPPORT_USERNAME']]) {
+                    withMaven(globalMavenSettingsConfig: 'wkt-maven-settings-xml', publisherStrategy: 'EXPLICIT') {
+                        sh '''
+                            cd tests
+                            mvn -B clean verify -Dtest.groups=gate -DskipITs=false
+                        '''
+                    }
                 }
             }
             post {
@@ -112,43 +110,84 @@ pipeline {
                     junit 'tests/target/failsafe-reports/*.xml'
                 }
                 failure {
-                    mail to: "${env.WIT_BUILD_NOTIFICATION_EMAIL_TO}", from: 'noreply@oracle.com',
-                    subject: "WebLogic Image Tool: ${env.JOB_NAME} - Failed",
-                    body: "Job Failed - \"${env.JOB_NAME}\" build: ${env.BUILD_NUMBER}\n\nView the log at:\n ${env.BUILD_URL}\n"
+                    archiveArtifacts artifacts: 'tests/target/logs/*.*', onlyIfSuccessful: 'false'
                 }
             }
         }
-        stage ('Save Nightly Installer'){
+        stage ('SystemTest Full') {
             when {
-                allOf {
+                anyOf {
                     triggeredBy 'TimerTrigger'
-                    branch "main"
+                    changelog '\\[full-mats\\].*'
                 }
             }
             steps {
+                script {
+                    docker.image("${env.DB_IMAGE}").pull()
+                    docker.image("${env.JRE_IMAGE}").pull()
+                }
+                withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'wkt-otn-credential', passwordVariable: 'ORACLE_SUPPORT_PASSWORD', usernameVariable: 'ORACLE_SUPPORT_USERNAME']]) {
+                    withMaven(globalMavenSettingsConfig: 'wkt-maven-settings-xml', publisherStrategy: 'EXPLICIT') {
+                        sh '''
+                            cd tests
+                            mvn -B clean verify -Dtest.groups=gate,nightly -DskipITs=false
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    junit 'tests/target/failsafe-reports/*.xml'
+                }
+                failure {
+                    // save logs for debugging test failures
+                    archiveArtifacts artifacts: 'tests/target/logs/*.*', onlyIfSuccessful: 'false'
+                    // notify staff when nightly builds fail
+                    slackSend channel: '#wkt-build-failure-notifications', botUser: false, color: 'danger',
+                            message: "Build failed. WebLogic Image Tool: <${env.BUILD_URL}|${env.JOB_NAME}:${env.BUILD_NUMBER}>"
+                }
+            }
+        }
+        stage ('Save Nightly Installer') {
+            when {
+                triggeredBy 'TimerTrigger'
+                branch "main"
+            }
+            steps {
                 sh '''
-                    oci os object put --namespace=weblogick8s --bucket-name=wko-system-test-files --config-file=/dev/null --auth=instance_principal --force --file=installer/target/imagetool.zip --name=imagetool-main.zip
+                    oci os object put --namespace=${WKT_TENANCY} --bucket-name=wko-system-test-files --config-file=/dev/null --auth=instance_principal --force --file=installer/target/imagetool.zip --name=imagetool-main.zip
                 '''
             }
         }
-     }
-}
-
-void runSonarScanner() {
-    def changeUrl = env.GIT_URL.split("/")
-    def org = changeUrl[3]
-    def repo = changeUrl[4].substring(0, changeUrl[4].length() - 4)
-    if (env.CHANGE_ID != null) {
-        sh "mvn -B sonar:sonar \
-            -Dsonar.projectKey=${org}_${repo} \
-            -Dsonar.pullrequest.provider=GitHub \
-            -Dsonar.pullrequest.github.repository=${org}/${repo} \
-            -Dsonar.pullrequest.key=${env.CHANGE_ID} \
-            -Dsonar.pullrequest.branch=${env.CHANGE_BRANCH} \
-            -Dsonar.pullrequest.base=${env.CHANGE_TARGET}"
-    } else {
-       sh "mvn -B sonar:sonar \
-           -Dsonar.projectKey=${org}_${repo} \
-           -Dsonar.branch.name=${env.BRANCH_NAME}"
+        stage ('Sync') {
+            when {
+                branch 'main'
+                not { triggeredBy 'TimerTrigger' }
+            }
+            steps {
+                build job: "wkt-sync",
+                        parameters: [ string(name: 'REPOSITORY', value: 'weblogic-image-tool') ],
+                        wait: true
+            }
+        }
     }
 }
+
+//void runSonarScanner() {
+//    def changeUrl = env.GIT_URL.split("/")
+//    def org = changeUrl[3]
+//    def repo = changeUrl[4].substring(0, changeUrl[4].length() - 4)
+//    if (env.CHANGE_ID != null) {
+//        sh "mvn -B sonar:sonar \
+//            -Dsonar.projectKey=${org}_${repo} \
+//            -Dsonar.pullrequest.provider=GitHub \
+//            -Dsonar.pullrequest.github.repository=${org}/${repo} \
+//            -Dsonar.pullrequest.key=${env.CHANGE_ID} \
+//            -Dsonar.pullrequest.branch=${env.CHANGE_BRANCH} \
+//            -Dsonar.pullrequest.base=${env.CHANGE_TARGET}"
+//    } else {
+//        sh "mvn -B sonar:sonar \
+//           -Dsonar.projectKey=${org}_${repo} \
+//           -Dsonar.branch.name=${env.BRANCH_NAME}"
+//    }
+//}
